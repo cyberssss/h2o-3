@@ -78,7 +78,8 @@
 #' @param remove_collinear_columns \code{Logical}. In case of linearly dependent columns, remove some of the dependent columns Defaults to FALSE.
 #' @param intercept \code{Logical}. Include constant term in the model Defaults to TRUE.
 #' @param non_negative \code{Logical}. Restrict coefficients (not intercept) to be non-negative Defaults to FALSE.
-#' @param max_iterations Maximum number of iterations Defaults to -1.
+#' @param max_iterations Maximum number of iterations.  Value should >=1.  A value of 0 will only return the modelcoefficients.
+#'        Defaults to -1.
 #' @param objective_epsilon Converge if  objective value changes less than this. Default (of -1.0) indicates: If lambda_search is set to
 #'        True the value of objective_epsilon is set to .0001. If the lambda_search is set to False and lambda is equal
 #'        to zero, the value of objective_epsilon is set to .000001, for any other value of lambda the default value of
@@ -106,6 +107,7 @@
 #'        variables, then lambda_min_ratio is set to 0.0001; if the number of observations is less than the number of
 #'        variables, then lambda_min_ratio is set to 0.01. Defaults to -1.
 #' @param beta_constraints Beta constraints
+#' @param expose_constraints \code{Logical}. Internal parameter, do not use.  Have no effect on model. Defaults to FALSE.
 #' @param max_active_predictors Maximum number of active predictors during computation. Use as a stopping criterion to prevent expensive model
 #'        building with many predictors. Default indicates: If the IRLSM solver is used, the value of
 #'        max_active_predictors is set to 5000 otherwise it is set to 100000000. Defaults to -1.
@@ -154,6 +156,10 @@
 #'        Defaults to 0.5.
 #' @param influence If set to dfbetas will calculate the difference in beta when a datarow is included and excluded in the
 #'        dataset. Must be one of: "dfbetas".
+#' @param linear_constraints Linear constraints: used to specify linear constraints involving more than one coefficients in standard form.
+#'        It is only supported for solver IRLSM.  It contains four columns: names (strings for coefficient names or
+#'        constant), values, types ( strings of 'Equal' or 'LessThanEqual'), constraint_numbers (0 for first linear
+#'        constraint, 2 for second linear constraint, ...
 #' @return A subclass of \code{\linkS4class{H2OModel}} is returned. The specific subclass depends on the machine
 #'         learning task at hand (if it's binomial classification, then an \code{\linkS4class{H2OBinomialModel}} is
 #'         returned, if it's regression then a \code{\linkS4class{H2ORegressionModel}} is returned). The default print-
@@ -252,6 +258,7 @@ h2o.glm <- function(x,
                     cold_start = FALSE,
                     lambda_min_ratio = -1,
                     beta_constraints = NULL,
+                    expose_constraints = FALSE,
                     max_active_predictors = -1,
                     interactions = NULL,
                     interaction_pairs = NULL,
@@ -274,7 +281,8 @@ h2o.glm <- function(x,
                     generate_variable_inflation_factors = FALSE,
                     fix_tweedie_variance_power = TRUE,
                     dispersion_learning_rate = 0.5,
-                    influence = c("dfbetas"))
+                    influence = c("dfbetas"),
+                    linear_constraints = NULL)
 {
   # Validate required training_frame first and other frame args: should be a valid key or an H2OFrame object
   training_frame <- .validate.H2OFrame(training_frame, required=TRUE)
@@ -411,6 +419,8 @@ h2o.glm <- function(x,
     parms$cold_start <- cold_start
   if (!missing(lambda_min_ratio))
     parms$lambda_min_ratio <- lambda_min_ratio
+  if (!missing(expose_constraints))
+    parms$expose_constraints <- expose_constraints
   if (!missing(max_active_predictors))
     parms$max_active_predictors <- max_active_predictors
   if (!missing(interaction_pairs))
@@ -455,6 +465,8 @@ h2o.glm <- function(x,
     parms$dispersion_learning_rate <- dispersion_learning_rate
   if (!missing(influence))
     parms$influence <- influence
+  if (!missing(linear_constraints))
+    parms$linear_constraints <- linear_constraints
 
   if( !missing(interactions) ) {
     # interactions are column names => as-is
@@ -535,6 +547,7 @@ h2o.glm <- function(x,
                                     cold_start = FALSE,
                                     lambda_min_ratio = -1,
                                     beta_constraints = NULL,
+                                    expose_constraints = FALSE,
                                     max_active_predictors = -1,
                                     interactions = NULL,
                                     interaction_pairs = NULL,
@@ -558,6 +571,7 @@ h2o.glm <- function(x,
                                     fix_tweedie_variance_power = TRUE,
                                     dispersion_learning_rate = 0.5,
                                     influence = c("dfbetas"),
+                                    linear_constraints = NULL,
                                     segment_columns = NULL,
                                     segment_models_id = NULL,
                                     parallelism = 1)
@@ -699,6 +713,8 @@ h2o.glm <- function(x,
     parms$cold_start <- cold_start
   if (!missing(lambda_min_ratio))
     parms$lambda_min_ratio <- lambda_min_ratio
+  if (!missing(expose_constraints))
+    parms$expose_constraints <- expose_constraints
   if (!missing(max_active_predictors))
     parms$max_active_predictors <- max_active_predictors
   if (!missing(interaction_pairs))
@@ -743,6 +759,8 @@ h2o.glm <- function(x,
     parms$dispersion_learning_rate <- dispersion_learning_rate
   if (!missing(influence))
     parms$influence <- influence
+  if (!missing(linear_constraints))
+    parms$linear_constraints <- linear_constraints
 
   if( !missing(interactions) ) {
     # interactions are column names => as-is
