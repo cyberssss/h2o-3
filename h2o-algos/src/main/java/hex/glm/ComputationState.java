@@ -14,7 +14,6 @@ import water.Job;
 import water.MemoryManager;
 import water.fvec.Frame;
 import water.util.ArrayUtils;
-import water.util.IcedHashMap;
 import water.util.Log;
 import water.util.MathUtils;
 
@@ -48,7 +47,7 @@ public final class ComputationState {
   private boolean _lambdaNull; // true if lambda was not provided by user
   private double _gMax; // store max value of original gradient without dividing by math.max(1e-2, _parms._alpha[0])
   private DataInfo _activeData;
-  private BetaConstraint _activeBC = null;
+  private BetaConstraint _activeBC;
   LinearConstraints[] _equalityConstraints = null;
   LinearConstraints[] _lessThanEqualToConstraints = null;
   LinearConstraints[] _fromBetaConstraints = null;
@@ -340,7 +339,8 @@ public final class ComputationState {
     int P = _dinfo.fullN();
     _activeBC = _bc;
     _activeData = _activeData != null?_activeData:_dinfo;
-    _allIn = _allIn || _alpha*lambdaNew == 0 || _activeBC.hasBounds();
+    // keep all predictors for the case of beta constraints or linear constraints
+    _allIn = _allIn || _alpha*lambdaNew == 0 || _activeBC.hasBounds() || _parms._linear_constraints != null;
     if (!_allIn) {
       int newlySelected = 0;
       final double rhs = Math.max(0,_alpha * (2 * lambdaNew - lambdaOld));
