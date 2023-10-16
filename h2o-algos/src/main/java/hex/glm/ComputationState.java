@@ -70,6 +70,7 @@ public final class ComputationState {
   int[][] _gamBetaIndices;
   int _totalBetaLength; // actual coefficient length without taking into account active columns only
   int _betaLengthPerClass;
+  ConstrainedGLMUtils.ConstraintGLMStates _csGLMState;
 
   public ComputationState(Job job, GLMParameters parms, DataInfo dinfo, BetaConstraint bc, GLM.BetaInfo bi){
     _job = job;

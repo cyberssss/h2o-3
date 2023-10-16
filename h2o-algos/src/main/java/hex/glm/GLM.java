@@ -561,8 +561,6 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
 
   DataInfo _dinfo;
   private transient DataInfo _validDinfo;
-  String[] _constraintCoefficientNames;
-  double[][] _initConstraintMatrix;
   // time per iteration in ms
 
   static class ScoringHistory {
@@ -1203,9 +1201,7 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
       if (bc.hasBounds() && _parms._early_stopping)
         warn("beta constraint and early_stopping", "if both are enabled may degrade model performance.");
       _state.setBC(bc);
-      if (_parms._linear_constraints != null) {
-        checkAssignLinearConstraints();
-      }
+
       if(hasOffsetCol() && _parms._intercept && !ordinal.equals(_parms._family)) { // fit intercept
         GLMGradientSolver gslvr = gam.equals(_parms._glmType) ? new GLMGradientSolver(_job,_parms, 
                 _dinfo.filterExpandedColumns(new int[0]), 0, _state.activeBC(), _betaInfo, _penaltyMatrix, _gamColIndices) 
@@ -1348,36 +1344,53 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
         
         _parms._compute_p_values = true;  // automatically turned these on
         _parms._remove_collinear_columns = true;
+      }      
+      if (_parms._linear_constraints != null) {
+        checkAssignLinearConstraints();
       }
       buildModel();
     }
   }
-  
+
   void checkAssignLinearConstraints() {
-    if (!IRLSM.equals(_parms._solver)) {
+    if (!IRLSM.equals(_parms._solver)) {  // only solver irlsm is allowed
       error("solver", "constrained GLM is only available for IRLSM.  PLease set solver to" +
               " IRLSM/irlsm explicitly.");
+      return;
+    }
+    if (notZeroLambdas(_parms._lambda) || _parms._lambda_search) {  // no regularization for constrainted GLM
+      error("lambda or lambda_search", "Regularization is not allowed for constrained GLM.");
+      return;
+    }
+    if ("multinomial".equals(_parms._solver) || "ordinal".equals(_parms._solver)) {
+      error("solver", "Constrained GLM is not supported for multinomial and ordinal families");
+      return;
+    }
+    if ("ml".equals(_parms._dispersion_parameter_method)) {
+      error("dispersion_parameter_method", "Only pearson and deviance is supported for dipsersion" +
+              " parameter calculation.");
+      return;
+    }
+    String[] coefNames = _dinfo.coefNames();
+    if (_parms._beta_constraints != null)
+      extractBetaConstraints(_state, coefNames);
+    // extract constraints from linear_constraints into equality of lessthanequalto constraints
+    extractLinearConstraints(_state, _parms._linear_constraints, _dinfo);
+    // make sure constraints have full rank.  If not, generate messages stating what constraints are redundant, error out
+    List<String> constraintNames = new ArrayList<>();
+    double[][] initConstraintMatrix = formConstraintMatrix(_state, constraintNames);
+    String[] constraintCoefficientNames = constraintNames.toArray(new String[0]);
+    if (initConstraintMatrix.length > coefNames.length)
+      warn("number of constraints", " exceeds the number of coefficients.  The system is" +
+              " over-constraints, and probably may not yield a valid solution due to possible conflicting " +
+              "constraints.  Consider reducing the number of constraints.");
+    List<String> redundantConstraints = foundRedundantConstraints(_state, initConstraintMatrix);
+    if (redundantConstraints != null) {
+      int numRedundant = redundantConstraints.size();
+      for (int index = 0; index < numRedundant; index++)
+        error("redundant and possibly conflicting linear constraints", redundantConstraints.get(index));
     } else {
-      // extract constraints from beta_constraints into one constraints
-      String[] coefNames = _dinfo.coefNames();
-      if (_parms._beta_constraints != null) 
-        extractBetaConstraints(_state, coefNames);
-      // extract constraints from linear_constraints into equality of lessthanequalto constraints
-      extractLinearConstraints(_state, _parms._linear_constraints, _dinfo);
-      // make sure constraints have full rank.  If not, generate messages stating what constraints are redundant, error out
-      List<String> constraintNames = new ArrayList<>();
-      _initConstraintMatrix = formConstraintMatrix(_state, constraintNames);
-      _constraintCoefficientNames = constraintNames.toArray(new String[0]);
-      if (_initConstraintMatrix.length > coefNames.length)
-        warn("number of constraints", " exceeds the number of coefficients.  The system is" +
-                " over-constraints, and probably may not yield a valid solution due to possible conflicting " +
-                "constraints.  Consider reducing the number of constraints.");
-      List<String> redundantConstraints = foundRedundantConstraints(_state, _initConstraintMatrix);
-      if (redundantConstraints != null) {
-        int numRedundant = redundantConstraints.size();
-        for (int index=0; index<numRedundant; index++)
-          error("redundant and possibly conflicting linear constraints", redundantConstraints.get(index));
-      }
+      _state._csGLMState = new ConstraintGLMStates(constraintCoefficientNames, initConstraintMatrix);
     }
   }
   
@@ -2239,6 +2252,71 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
       }
     }
 
+    /***
+     * This method fits the constraint GLM for IRLSM.  Please refer to doc: ???
+     * 
+     *
+     */
+    private void fitIRLSMCS(Solver s) {
+      double[] betaCnd = _checkPointFirstIter ? _model._betaCndCheckpoint : _state.beta();
+      LineSearchSolver ls = null;
+      int iterCnt = _checkPointFirstIter ? _state._iter : 0;
+      boolean firstIter = iterCnt == 0;
+      final BetaConstraint bc = _state.activeBC();
+      try {
+        while (true) {
+          iterCnt++;
+          long t1 = System.currentTimeMillis();
+          ComputationState.GramXY gram = _state.computeGram(betaCnd, s);
+          long t2 = System.currentTimeMillis();
+          if (!_state._lsNeeded && (Double.isNaN(gram.likelihood) || _state.objective(gram.beta, gram.likelihood) >
+                  _state.objective() + _parms._objective_epsilon) && !_checkPointFirstIter) {
+            _state._lsNeeded = true;
+          } else {
+            if (!firstIter && !_state._lsNeeded && !progress(gram.beta, gram.likelihood) && !_checkPointFirstIter) {
+              Log.info("DONE after " + (iterCnt - 1) + " iterations (1)");
+              _model._betaCndCheckpoint = betaCnd;
+              return;
+            }
+            if (!_checkPointFirstIter)
+              betaCnd = s == Solver.COORDINATE_DESCENT ? COD_solve(gram, _state._alpha, _state.lambda())
+                      : ADMM_solve(gram.gram, gram.xy); // this will shrink betaCnd if needed but this call may be skipped
+          }
+          firstIter = false;
+          _checkPointFirstIter = false;
+          long t3 = System.currentTimeMillis();
+          if (_state._lsNeeded) {
+            if (ls == null)
+              ls = (_state.l1pen() == 0 && !_state.activeBC().hasBounds())
+                      ? new MoreThuente(_state.gslvr(), _state.beta(), _state.ginfo())
+                      : new SimpleBacktrackingLS(_state.gslvr(), _state.beta().clone(), _state.l1pen(), _state.ginfo());
+            double[] oldBetaCnd = ls.getX();
+            if (betaCnd.length != oldBetaCnd.length) {  // if ln 1453 is skipped and betaCnd.length != _state.beta()
+              betaCnd = extractSubRange(betaCnd.length, 0, _state.activeData()._activeCols, betaCnd);
+            }
+            if (!ls.evaluate(ArrayUtils.subtract(betaCnd, oldBetaCnd, betaCnd))) { // ls.getX() get the old beta value
+              Log.info(LogMsg("Ls failed " + ls));
+              return;
+            }
+            betaCnd = ls.getX();
+            if (_betaConstraintsOn)
+              bc.applyAllBounds(betaCnd);
+
+            if (!progress(betaCnd, ls.ginfo()))
+              return;
+            long t4 = System.currentTimeMillis();
+            Log.info(LogMsg("computed in " + (t2 - t1) + "+" + (t3 - t2) + "+" + (t4 - t3) + "=" + (t4 - t1) + "ms, step = " + ls.step() + ((_lslvr != null) ? ", l1solver " + _lslvr : "")));
+          } else {
+            if (_betaConstraintsOn) // apply beta constraints without LS
+              bc.applyAllBounds(betaCnd);
+            Log.info(LogMsg("computed in " + (t2 - t1) + "+" + (t3 - t2) + "=" + (t3 - t1) + "ms, step = " + 1 + ((_lslvr != null) ? ", l1solver " + _lslvr : "")));
+          }
+        }
+      } catch (NonSPDMatrixException e) {
+        Log.warn(LogMsg("Got Non SPD matrix, stopped."));
+      }
+    }
+
     private void fitIRLSMML(Solver s) {
       double[] betaCnd = _checkPointFirstIter ? _model._betaCndCheckpoint : _state.beta();
       LineSearchSolver ls = null;
@@ -3041,8 +3119,10 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
             else {
               if (_parms._dispersion_parameter_method.equals(ml))
                   fitIRLSMML(solver);
-              else
+              else if (_parms._linear_constraints == null)
                 fitIRLSM(solver);
+              else
+                fitIRLSMCS(solver); // constrained GLM IRLSM
             }
             break;
           case GRADIENT_DESCENT_LH:
@@ -3621,8 +3701,8 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
         _model._output._fromBetaConstraints = _state._fromBetaConstraints;
         _model._output._equalityConstraints = _state._equalityConstraints;
         _model._output._lessThanEqualToConstraints = _state._lessThanEqualToConstraints;
-        _model._output._constraintCoefficientNames = _constraintCoefficientNames;
-        _model._output._initConstraintMatrix = _initConstraintMatrix;
+        _model._output._constraintCoefficientNames = _state._csGLMState._constraintNames;
+        _model._output._initConstraintMatrix = _state._csGLMState._initCSMatrix;
       }
       if (_parms._max_iterations == 0) {
         return;

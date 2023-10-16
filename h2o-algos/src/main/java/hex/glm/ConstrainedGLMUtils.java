@@ -24,6 +24,25 @@ public class ConstrainedGLMUtils {
       _constraintsVal = Double.NaN; // represent constraint not evaluated.
     }
   }
+  
+  public static class ConstraintGLMStates {
+    // values here were taken from Michel Bierlaire, Optimization: Principles and Algorithms, Chapter 19, EPEL Press,
+    // second edition, 2018.
+    double _c0CS = 10.0;
+    double _eta0CS = 0.1258925; 
+    double _alphaCS = 0.1;
+    double _betaCS = 0.9;
+    double _epsilonkCS = 1.0/_c0CS;
+    double _etakCS = _eta0CS*Math.pow(_c0CS, _alphaCS);
+    String[] _constraintNames;
+    double[][] _initCSMatrix;
+    
+    
+    public ConstraintGLMStates(String[] constrainNames, double[][] initMatrix) {
+      _constraintNames = constrainNames;
+      _initCSMatrix = initMatrix;
+    }
+  }
 
   /***
    *
@@ -248,7 +267,6 @@ public class ConstrainedGLMUtils {
   
   public static List<String> foundRedundantConstraints(ComputationState state, final double[][] initConstraintMatrix) {
     Matrix constMatrix = new Matrix(initConstraintMatrix);
-    //Matrix constMatrixTConstMatrix = constMatrix.times(constMatrix.transpose());
     Matrix constMatrixLessConstant = constMatrix.getMatrix(0, constMatrix.getRowDimension() -1, 1, constMatrix.getColumnDimension()-1);
     Matrix constMatrixTConstMatrix = constMatrixLessConstant.times(constMatrixLessConstant.transpose());
     int rank = constMatrixLessConstant.rank();

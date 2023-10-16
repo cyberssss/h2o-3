@@ -284,6 +284,7 @@ public class GLMConstrainedTest extends TestUtil {
       params._max_iterations = 1;
       params._expose_constraints = true;
       params._linear_constraints = linearConstraint._key;
+      params._lambda = new double[]{0};
       GLMModel glm2 = new GLM(params).trainModel().get();
       Scope.track_generic(glm2);
       assert 1==2 : "Should have thrown an error due to duplicated constraints.";
@@ -314,6 +315,7 @@ public class GLMConstrainedTest extends TestUtil {
       params._max_iterations = 1;
       params._expose_constraints = true;
       params._linear_constraints = linear_constraints._key;
+      params._lambda = new double[]{0};
       GLMModel glm2 = new GLM(params).trainModel().get();
       Scope.track_generic(glm2);
       assert 1==2 : "Should have thrown an error due to duplicated constraints.";
@@ -343,6 +345,7 @@ public class GLMConstrainedTest extends TestUtil {
       params._expose_constraints = true;
       params._linear_constraints = _linearConstraint4._key;
       params._beta_constraints = _betaConstraint2._key;
+      params._lambda = new double[]{0};
       GLMModel glm2 = new GLM(params).trainModel().get();
       Scope.track_generic(glm2);
       assert 1==2 : "Should have thrown an error due to duplicated constraints.";
@@ -374,6 +377,7 @@ public class GLMConstrainedTest extends TestUtil {
       params._max_iterations = 1;
       params._expose_constraints = true;
       params._linear_constraints = linear_constraints._key;
+      params._lambda = new double[]{0};
       GLMModel glm2 = new GLM(params).trainModel().get();
       Scope.track_generic(glm2);
       // check that constraint matrix is extracted correctly
@@ -413,6 +417,7 @@ public class GLMConstrainedTest extends TestUtil {
       params._expose_constraints = true;
       params._beta_constraints = beta_constraints._key;
       params._linear_constraints = linear_constraints._key;
+      params._lambda = new double[]{0};
       GLMModel glm2 = new GLM(params).trainModel().get();
       Scope.track_generic(glm2);
       // check that constraint matrix is extracted correctly
@@ -465,6 +470,7 @@ public class GLMConstrainedTest extends TestUtil {
       params._response_column = "C21";
       params._max_iterations = 0;
       params._train = train._key;
+      params._lambda = new double[]{0};
       GLMModel glm = new GLM(params).trainModel().get();
       Scope.track_generic(glm);
       List<String> coeffNames = Stream.of(glm._output._coefficient_names).collect(Collectors.toList()); ;
@@ -506,6 +512,7 @@ public class GLMConstrainedTest extends TestUtil {
       params._expose_constraints = true;
       params._beta_constraints = beta_constraints._key;
       params._linear_constraints = linear_constraints._key;
+      params._lambda = new double[]{0};
       GLMModel glm2 = new GLM(params).trainModel().get();
       Scope.track_generic(glm2);
       // check constraints from betaConstraints are extracted properly
@@ -552,6 +559,7 @@ public class GLMConstrainedTest extends TestUtil {
       params._expose_constraints = true;
       params._beta_constraints = beta_constraints._key;
       params._linear_constraints = linear_constraints._key;
+      params._lambda = new double[]{0};
       GLMModel glm2 = new GLM(params).trainModel().get();
       Scope.track_generic(glm2);
       // check constraints from betaConstraints are extracted properly
@@ -591,6 +599,7 @@ public class GLMConstrainedTest extends TestUtil {
       params._max_iterations = 1;
       params._expose_constraints = true;
       params._linear_constraints = linear_constraints._key;
+      params._lambda = new double[]{0};
       GLMModel glm2 = new GLM(params).trainModel().get();
       Scope.track_generic(glm2);
       // check constraints from linear constraints are extracted properly
@@ -619,12 +628,11 @@ public class GLMConstrainedTest extends TestUtil {
       params._max_iterations = 0;
       params._solver = IRLSM;
       params._train = train._key;
+      params._lambda = new double[]{0};
       GLMModel glm = new GLM(params).trainModel().get();
       Scope.track_generic(glm);
       List<String> coeffNames = Stream.of(glm._output._coefficient_names).collect(Collectors.toList()); ;
       // build the beta_constraints
-      int coefLen = coeffNames.size()-1;
-
       Frame linear_constraints = _linearConstraint2;
       params._max_iterations = 1;
       params._expose_constraints = true;
