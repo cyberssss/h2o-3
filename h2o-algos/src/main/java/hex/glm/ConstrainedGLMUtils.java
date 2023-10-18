@@ -15,6 +15,13 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 public class ConstrainedGLMUtils {
+  // constant setting refer to Michel Bierlaire, Optimization: Principles and Algorithms, Chapter 19, EPEL Press,
+  // second edition, 2018.
+  public static final double C0CS = 10.0;
+  public static final double ETA0CS = 0.1258925;
+  public static final double ALPHACS = 0.1;
+  public static final double BETACS = 0.9;
+  
   public static class LinearConstraints extends Iced { // store one linear constraint
     IcedHashMap<String, Double> _constraints; // column names, coefficient of constraints
     double _constraintsVal; // contains evaluated constraint values
@@ -26,14 +33,8 @@ public class ConstrainedGLMUtils {
   }
   
   public static class ConstraintGLMStates {
-    // values here were taken from Michel Bierlaire, Optimization: Principles and Algorithms, Chapter 19, EPEL Press,
-    // second edition, 2018.
-    double _c0CS = 10.0;
-    double _eta0CS = 0.1258925; 
-    double _alphaCS = 0.1;
-    double _betaCS = 0.9;
-    double _epsilonkCS = 1.0/_c0CS;
-    double _etakCS = _eta0CS*Math.pow(_c0CS, _alphaCS);
+    double _epsilonkCS = 1.0/C0CS;
+    double _etakCS = ETA0CS*Math.pow(C0CS, ALPHACS);
     String[] _constraintNames;
     double[][] _initCSMatrix;
     
@@ -119,7 +120,7 @@ public class ConstrainedGLMUtils {
   }
 
   /***
-   * This method will extract the constraints specified in the Frame with key linearCOnstraintFrameKey.  For example,
+   * This method will extract the constraints specified in the Frame with key linearConstraintFrameKey.  For example,
    * the following constraints a*beta_1+b*beta_2-c*beta_5 == 0, d*beta_2+e*beta_6-f <= 0 can be specified as the
    * following rows:
    *  names           values            Type            constraint_numbers

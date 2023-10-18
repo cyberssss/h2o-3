@@ -49,12 +49,13 @@ public class GLMConstrainedTest extends TestUtil {
   String[][] _lessThanNames2;
   double[][] _lessThanValues2;
   double[][] _lessThanValuesStandard2;
+  int[] _catCol = new int[]{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
   
   @Before
   public void setup() {
     Scope.enter();
     Frame train = parseAndTrackTestFile("smalldata/glm_test/gaussian_20cols_10000Rows.csv");
-    _coeffNames1 = createCoeffNames(train);
+    _coeffNames1 = transformFrameCreateCoefNames(train);
     generateConstraint1FrameNAnswer(train);
     generateConstraint2FrameNAnswer(train);
     generateConstraint3FrameNAnswer();
@@ -76,10 +77,10 @@ public class GLMConstrainedTest extends TestUtil {
             .withColNames("names", "values", "types", "constraint_numbers")
             .withVecTypes(T_STR, T_NUM, T_STR, T_NUM)
             .withDataForCol(0, new String[] {_coeffNames1.get(0), _coeffNames1.get(1), _coeffNames1.get(3),
-                    "constant", _coeffNames1.get(8), _coeffNames1.get(36), _coeffNames1.get(37), _coeffNames1.get(38),
-                    _coeffNames1.get(39), _coeffNames1.get(40), _coeffNames1.get(41), _coeffNames1.get(42), "constant",
+                    "constant", _coeffNames1.get(8), _coeffNames1.get(23), _coeffNames1.get(24), _coeffNames1.get(25),
+                    _coeffNames1.get(19), _coeffNames1.get(20), _coeffNames1.get(21), _coeffNames1.get(22), "constant",
                     _coeffNames1.get(4), _coeffNames1.get(5), _coeffNames1.get(6), "constant", _coeffNames1.get(6),
-                    _coeffNames1.get(43), _coeffNames1.get(7), _coeffNames1.get(36), _coeffNames1.get(38), "constant",
+                    _coeffNames1.get(33), _coeffNames1.get(7), _coeffNames1.get(24), _coeffNames1.get(25), "constant",
                     _coeffNames1.get(1), _coeffNames1.get(coefLen-3), "constant"})
             .withDataForCol(1, new double [] {-0.3, 0.5, 1.0, -3.0, 3, -4, 0.5, 0.1, -0.2, 2.0, -0.1, -0.4,
                     0.8, 0.1, -0.5, 0.7, -1.1, 2.0, 0.5, -0.3, 0.5, -1.5, -0.3, -1.0, 1.0, -9.0})
@@ -89,78 +90,94 @@ public class GLMConstrainedTest extends TestUtil {
                     "equal", "equal", "equal", "equal", "equal", "lessthanequal", "lessthanequal", "lessthanequal"})
             .withDataForCol(3, new int[]{0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 6, 6,
                     6, 7, 7 ,7}).build();
-    Scope.track(_linearConstraint2);
+    Scope.track(_linearConstraint4);
   }
 
   public void generateConstraint2FrameNAnswer(Frame train) {
-    // Constraints in the linear_constraints, 
-    // a. -0.3*beta_0+0.5*beta_1+1*beta_3-3 <= 0; 
-    // b. 3*beta_8-4*beta_36+0.5*beta_37 <= 0, 
-    // c.0.1*beta_38-0.2*beta_39==0, 
-    // d. 2*beta_40-0.1*beta_41-0.4*beta_42+0.8 <= 0;
-    // e. 0.1*beta_4-0.5*beta_5+0.7*beta_6-1.1 == 0; 
-    // f. 2*beta_6+0.5*beta_43-0.3*beta_7 == 0 
-    // g. 0.5*beta_36-1.5*beta_38-0.3 == 0    
+    // linear constraints:
+    // -0.3*beta0+0.5*beta1+1*beta3-3<=0.0;
+    // 3*beta8-4*beta33+0.5*beta34 <= 0.0;
+    // 0.1*beta34-0.2*beta35 = 0.0;
+    // 2*beta30-0.1*beta31-0.4*beta32+0.8 <= 0.0
+    // 0.1*beta4 -0.5*beta5 +0.7*beta6 -1.1 = 0.0;
+    // 2*beta6 +0.5beta28 -0.3*beta7 = 0.0;
+    // 0.5*beta33 -1.5*beta35 -0.3 = 0.0;
     _linearConstraint2 = new TestFrameBuilder()
             .withColNames("names", "values", "types", "constraint_numbers")
             .withVecTypes(T_STR, T_NUM, T_STR, T_NUM)
             .withDataForCol(0, new String[] {_coeffNames1.get(0), _coeffNames1.get(1), _coeffNames1.get(3),
-                    "constant", _coeffNames1.get(8), _coeffNames1.get(36), _coeffNames1.get(37), _coeffNames1.get(38),
-                    _coeffNames1.get(39), _coeffNames1.get(40), _coeffNames1.get(41), _coeffNames1.get(42), "constant",
-                    _coeffNames1.get(4), _coeffNames1.get(5), _coeffNames1.get(6), "constant", _coeffNames1.get(6),
-                    _coeffNames1.get(43), _coeffNames1.get(7), _coeffNames1.get(36), _coeffNames1.get(38), "constant"})
-            .withDataForCol(1, new double [] {-0.3, 0.5, 1.0, -3.0, 3, -4, 0.5, 0.1, -0.2, 2.0, -0.1, -0.4,
-                    0.8, 0.1, -0.5, 0.7, -1.1, 2.0, 0.5, -0.3, 0.5, -1.5, -0.3})
+                    "constant",
+                    _coeffNames1.get(8), _coeffNames1.get(33), _coeffNames1.get(34), 
+                    _coeffNames1.get(34), _coeffNames1.get(35),
+                    _coeffNames1.get(30), _coeffNames1.get(31), _coeffNames1.get(32), "constant",
+                    _coeffNames1.get(4), _coeffNames1.get(5), _coeffNames1.get(6), "constant", 
+                    _coeffNames1.get(6), _coeffNames1.get(28), _coeffNames1.get(7), 
+                    _coeffNames1.get(33), _coeffNames1.get(35), "constant"})
+            .withDataForCol(1, new double [] {-0.3, 0.5, 1.0, -3.0,
+                    3, -4, 0.5, 
+                    0.1, -0.2, 
+                    2.0, -0.1, -0.4, 0.8, 
+                    0.1, -0.5, 0.7, -1.1, 
+                    2.0, 0.5, -0.3, 
+                    0.5, -1.5, -0.3})
             .withDataForCol(2, new String[] {"lessthanequal", "lessthanequal", "lessthanequal", "lessthanequal",
-                    "lessthanequal", "lessthanequal", "lessthanequal", "equal", "equal", "lessthanequal",
-                    "lessthanequal", "lessthanequal", "lessthanequal", "equal", "equal", "equal", "equal", "equal",
-                    "equal", "equal", "equal", "equal", "equal"})
-            .withDataForCol(3, new int[]{0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 6, 6,
-                    6}).build();
+                    "lessthanequal", "lessthanequal", "lessthanequal", 
+                    "equal", "equal", 
+                    "lessthanequal", "lessthanequal", "lessthanequal", "lessthanequal", 
+                    "equal", "equal", "equal", "equal", 
+                    "equal", "equal", "equal", 
+                    "equal", "equal", "equal"})
+            .withDataForCol(3, new int[]{0, 0, 0, 0, 
+                    1, 1, 1, 
+                    2, 2, 
+                    3, 3, 3, 3, 
+                    4, 4, 4, 4, 
+                    5, 5, 5, 
+                    6, 6, 6}).build();
     Scope.track(_linearConstraint2);
-    _equalityNames2 = new String[][]{{_coeffNames1.get(38), _coeffNames1.get(39), "constant"},
+    _equalityNames2 = new String[][]{{_coeffNames1.get(34), _coeffNames1.get(35), "constant"},
             {_coeffNames1.get(4), _coeffNames1.get(5), _coeffNames1.get(6), "constant"},
-            {_coeffNames1.get(6), _coeffNames1.get(43), _coeffNames1.get(7), "constant"},
-            {_coeffNames1.get(36), _coeffNames1.get(38), "constant"}};
+            {_coeffNames1.get(6), _coeffNames1.get(28), _coeffNames1.get(7), "constant"},
+            {_coeffNames1.get(33), _coeffNames1.get(35), "constant"}};
     _equalityValues2 = new double[][]{{0.1, -0.2, 0.0}, {0.1, -0.5, 0.7, -1.1}, {2, 0.5, -0.3, 0.0},
             {0.5, -1.5, -0.3}};
-    _equalityValuesStandard2 = new double[][]{{-0.3, 0.5, 1, -3},
-            {3, -4/train.vec(_coeffNames1.get(36)).sigma(), 0.5/train.vec(_coeffNames1.get(37)).sigma(), 0.0},
-            {2/train.vec(_coeffNames1.get(40)).sigma(), -0.1/train.vec(_coeffNames1.get(41)).sigma(),
-                    -0.4/train.vec(_coeffNames1.get(42)).sigma(), 0.8}};
-    _lessThanNames2 = new String[][]{{_coeffNames1.get(0), _coeffNames1.get(1), _coeffNames1.get(3),
-            "constant"}, {_coeffNames1.get(8), _coeffNames1.get(36), _coeffNames1.get(37), "constant"},
-            {_coeffNames1.get(40), _coeffNames1.get(41), _coeffNames1.get(42), "constant"}};
+    _equalityValuesStandard2 = new double[][]{{0.1/train.vec(_coeffNames1.get(34)).sigma(), -0.2/train.vec(_coeffNames1.get(35)).sigma(), 0.0},
+            {0.1, -0.5, 0.7, -1.1},
+            {2, 0.5/train.vec(_coeffNames1.get(28)).sigma(), -0.3, 0.0},
+            {0.5/train.vec(_coeffNames1.get(33)).sigma(), -1.5/train.vec(_coeffNames1.get(35)).sigma(), -0.3}};
+    _lessThanNames2 = new String[][]{{_coeffNames1.get(0), _coeffNames1.get(1), _coeffNames1.get(3), "constant"}, 
+            {_coeffNames1.get(8), _coeffNames1.get(33), _coeffNames1.get(34), "constant"},
+            {_coeffNames1.get(30), _coeffNames1.get(31), _coeffNames1.get(32), "constant",}};
     _lessThanValues2 = new double[][]{{-0.3, 0.5, 1, -3}, {3, -4, 0.5, 0.0}, {2, -0.1, -0.4, 0.8}};
     _lessThanValuesStandard2 = new double[][]{{-0.3, 0.5, 1, -3},
-            {3, -4/train.vec(_coeffNames1.get(36)).sigma(), 0.5/train.vec(_coeffNames1.get(37)).sigma(), 0.0},
-            {2/train.vec(_coeffNames1.get(40)).sigma(), -0.1/train.vec(_coeffNames1.get(41)).sigma(),
-                    -0.4/train.vec(_coeffNames1.get(42)).sigma(), 0.8}};
+            {3, -4/train.vec(_coeffNames1.get(33)).sigma(), 0.5/train.vec(_coeffNames1.get(34)).sigma(), 0.0},
+            {2/train.vec(_coeffNames1.get(30)).sigma(), -0.1/train.vec(_coeffNames1.get(31)).sigma(),
+                    -0.4/train.vec(_coeffNames1.get(32)).sigma(), 0.8}};
   }
 
   public void generateConstraint3FrameNAnswer() {
     // Constraints in the linear_constraints, 
     // a. -0.3*beta_0+0.5*beta_1+1*beta_3-3 <= 0; 
-    // b. 3*beta_8-4*beta_36+0.5*beta_37 <= 0, 
-    // c.0.1*beta_38-0.2*beta_39==0, 
-    // d. 2*beta_40-0.1*beta_41-0.4*beta_42+0.8 <= 0;
+    // b. 3*beta_8-4*beta_26+0.5*beta_27 <= 0, 
+    // c.0.1*beta_28-0.2*beta_29==0, 
+    // d. 2*beta_30-0.1*beta_31-0.4*beta_32+0.8 <= 0;
     // e. 0.1*beta_4-0.5*beta_5+0.7*beta_6-1.1 == 0; 
-    // f. 2*beta_6+0.5*beta_43-0.3*beta_7 == 0 
-    // g. 0.5*beta_36-1.5*beta_38-0.3 == 0  
-    // h. 4*beta_40-0.2*beta_41-0.8*beta_42+1.6 <= 0; redundant to constraint d
-    // i. 1.5*beta_36-4.5*beta_38-0.9 == 0; redundant to constraint g
+    // f. 2*beta_6+0.5*beta_33-0.3*beta_7 == 0 
+    // g. 0.5*beta_26-1.5*beta_28-0.3 == 0  
+    // h. 4*beta_30-0.2*beta_31-0.8*beta_32+1.6 <= 0; redundant to constraint d
+    // i. 1.5*beta_26-4.5*beta_28-0.9 == 0; redundant to constraint g
     _linearConstraint3 = new TestFrameBuilder()
             .withColNames("names", "values", "types", "constraint_numbers")
             .withVecTypes(T_STR, T_NUM, T_STR, T_NUM)
             .withDataForCol(0, new String[] {_coeffNames1.get(0), _coeffNames1.get(1), _coeffNames1.get(3), "constant", 
-                    _coeffNames1.get(8), _coeffNames1.get(36), _coeffNames1.get(37), 
-                    _coeffNames1.get(38), _coeffNames1.get(39), 
-                    _coeffNames1.get(40), _coeffNames1.get(41), _coeffNames1.get(42), "constant",
+                    _coeffNames1.get(8), _coeffNames1.get(26), _coeffNames1.get(27), 
+                    _coeffNames1.get(28), _coeffNames1.get(29), 
+                    _coeffNames1.get(30), _coeffNames1.get(31), _coeffNames1.get(32), "constant",
                     _coeffNames1.get(4), _coeffNames1.get(5), _coeffNames1.get(6), "constant",
-                    _coeffNames1.get(6), _coeffNames1.get(43), _coeffNames1.get(7), 
-                    _coeffNames1.get(36), _coeffNames1.get(38), "constant",
-                    _coeffNames1.get(40), _coeffNames1.get(41), _coeffNames1.get(42), "constant",
-                    _coeffNames1.get(36), _coeffNames1.get(38), "constant"})
+                    _coeffNames1.get(6), _coeffNames1.get(33), _coeffNames1.get(7), 
+                    _coeffNames1.get(26), _coeffNames1.get(28), "constant",
+                    _coeffNames1.get(30), _coeffNames1.get(31), _coeffNames1.get(32), "constant",
+                    _coeffNames1.get(26), _coeffNames1.get(28), "constant"})
             .withDataForCol(1, new double [] {-0.3, 0.5, 1.0, -3.0, 
                     3, -4, 0.5, 
                     0.1, -0.2, 
@@ -171,12 +188,23 @@ public class GLMConstrainedTest extends TestUtil {
                     4, -0.2, -0.8, 1.6, 
                     1.5, -4.5, -0.9})
             .withDataForCol(2, new String[] {"lessthanequal", "lessthanequal", "lessthanequal", "lessthanequal",
-                    "lessthanequal", "lessthanequal", "lessthanequal", "equal", "equal", "lessthanequal",
-                    "lessthanequal", "lessthanequal", "lessthanequal", "equal", "equal", "equal", "equal", "equal",
-                    "equal", "equal", "equal", "equal", "equal", "lessthanequal", "lessthanequal", "lessthanequal",
-                    "lessthanequal", "equal", "equal", "equal"})
-            .withDataForCol(3, new int[]{0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 6, 6,
-                    6, 7, 7, 7, 7, 8, 8, 8}).build();
+                    "lessthanequal", "lessthanequal", "lessthanequal", 
+                    "equal", "equal", 
+                    "lessthanequal", "lessthanequal", "lessthanequal", "lessthanequal", 
+                    "equal", "equal", "equal", "equal", 
+                    "equal", "equal", "equal", 
+                    "equal", "equal", "equal", 
+                    "lessthanequal", "lessthanequal", "lessthanequal", "lessthanequal", 
+                    "equal", "equal", "equal"})
+            .withDataForCol(3, new int[]{0, 0, 0, 0, 
+                    1, 1, 1, 
+                    2, 2, 
+                    3, 3, 3, 3, 
+                    4, 4, 4, 4, 
+                    5, 5, 5, 
+                    6, 6, 6, 
+                    7, 7, 7, 7, 
+                    8, 8, 8}).build();
     Scope.track(_linearConstraint2);
   }
   
@@ -191,7 +219,7 @@ public class GLMConstrainedTest extends TestUtil {
                     .withColNames("names", "lower_bounds", "upper_bounds")
                     .withVecTypes(T_STR, T_NUM, T_NUM)
                     .withDataForCol(0, new String[] {_coeffNames1.get(0), _coeffNames1.get(1),
-                            _coeffNames1.get(coefLen-3), _coeffNames1.get(coefLen-1)})
+                            _coeffNames1.get(coefLen-4), _coeffNames1.get(coefLen-3)})
                     .withDataForCol(1, new double [] {1.0, -1.0, Double.NEGATIVE_INFINITY, 0.1})
                     .withDataForCol(2, new double[] {10.0, Double.POSITIVE_INFINITY, 8.0, 0.1}).build();
     Scope.track(_betaConstraint1);
@@ -201,23 +229,23 @@ public class GLMConstrainedTest extends TestUtil {
             .withColNames("names", "values", "types", "constraint_numbers")
             .withVecTypes(T_STR, T_NUM, T_STR, T_NUM)
             .withDataForCol(0, new String[] {_coeffNames1.get(0), _coeffNames1.get(5), "constant",
-                    _coeffNames1.get(36), _coeffNames1.get(38)})
+                    _coeffNames1.get(34), _coeffNames1.get(35)})
             .withDataForCol(1, new double [] {2, 0.5, -1, 0.5, -1.5})
             .withDataForCol(2, new String[] {"lessthanequal", "lessthanequal", "lessthanequal", "equal", "equal"})
             .withDataForCol(3, new int[]{0,0,0,1,1}).build();
     Scope.track(_linearConstraint1);
     // form correct constraints names and values:
     _betaConstraintNames1 = new String[][]{{_coeffNames1.get(0), "constant"}, {_coeffNames1.get(0), "constant"},
-            {_coeffNames1.get(1), "constant"}, {_coeffNames1.get(coefLen-3), "constant"},
-            {_coeffNames1.get(coefLen-1), "constant"}};
+            {_coeffNames1.get(1), "constant"}, {_coeffNames1.get(coefLen-4), "constant"},
+            {_coeffNames1.get(coefLen-3), "constant"}};
     _betaConstraintValStandard1 = new double[][]{{-1,1}, {1,-10}, {-1,-1},
-            {1.0,-8*train.vec(_coeffNames1.get(coefLen-3)).sigma()},
-            {1,-0.1*train.vec(_coeffNames1.get(coefLen-1)).sigma()}};
+            {1.0,-8*train.vec(_coeffNames1.get(coefLen-4)).sigma()},
+            {1,-0.1*train.vec(_coeffNames1.get(coefLen-3)).sigma()}};
     _betaConstraintVal1 = new double[][]{{-1,1}, {1,-10}, {-1,-1}, {1,-8}, {1,-0.1}};
 
-    _equalityNames1 = new String[][]{{_coeffNames1.get(36), _coeffNames1.get(38), "constant"}};
-    _equalityValuesStandard1 = new double[][]{{0.5/train.vec(_coeffNames1.get(36)).sigma(),
-            -1.5/train.vec(_coeffNames1.get(38)).sigma(), 0.0}};
+    _equalityNames1 = new String[][]{{_coeffNames1.get(34), _coeffNames1.get(35), "constant"}};
+    _equalityValuesStandard1 = new double[][]{{0.5/train.vec(_coeffNames1.get(34)).sigma(),
+            -1.5/train.vec(_coeffNames1.get(35)).sigma(), 0.0}};
     _equalityValues1 = new double[][]{{0.5, -1.5, 0.0}};
 
     _lessThanNames1 = new String[][]{{_coeffNames1.get(0), _coeffNames1.get(5), "constant"}};
@@ -225,15 +253,15 @@ public class GLMConstrainedTest extends TestUtil {
     _lessThanValues1 = new double[][]{{2, 0.5, -1}};
   }
   
-  public List<String> createCoeffNames(Frame train) {
-    int[] catCol = new int[]{0,1,2,3,4,5,6,7,8,9};
-    for (int colInd : catCol)
+  public List<String> transformFrameCreateCoefNames(Frame train) {
+    for (int colInd : _catCol)
       train.replace((colInd), train.vec(colInd).toCategoricalVec()).remove();
     DKV.put(train);
     GLMModel.GLMParameters params = new GLMModel.GLMParameters(gaussian);
     params._standardize=true;
     params._response_column = "C21";
     params._max_iterations = 0;
+    params._lambda = new double[]{0.0};
     params._train = train._key;
     GLMModel glm = new GLM(params).trainModel().get();
     Scope.track_generic(glm);
@@ -255,7 +283,7 @@ public class GLMConstrainedTest extends TestUtil {
               new TestFrameBuilder()
                       .withColNames("names", "lower_bounds", "upper_bounds")
                       .withVecTypes(T_STR, T_NUM, T_NUM)
-                      .withDataForCol(0, new String[] {_coeffNames1.get(40), _coeffNames1.get(41)})
+                      .withDataForCol(0, new String[] {_coeffNames1.get(30), _coeffNames1.get(31)})
                       .withDataForCol(1, new double [] {2, 2})
                       .withDataForCol(2, new double[] {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY}).build();
       Scope.track(betaConstraint);
@@ -264,17 +292,14 @@ public class GLMConstrainedTest extends TestUtil {
       Frame linearConstraint = new TestFrameBuilder()
               .withColNames("names", "values", "types", "constraint_numbers")
               .withVecTypes(T_STR, T_NUM, T_STR, T_NUM)
-              .withDataForCol(0, new String[] {_coeffNames1.get(40), _coeffNames1.get(41), "constant"})
+              .withDataForCol(0, new String[] {_coeffNames1.get(30), _coeffNames1.get(31), "constant"})
               .withDataForCol(1, new double [] {1,1,-2})
               .withDataForCol(2, new String[] {"lessthanequal", "lessthanequal", "lessthanequal"})
               .withDataForCol(3, new int[]{0,0,0}).build();
       Scope.track(linearConstraint);
       
       Frame train = parseAndTrackTestFile("smalldata/glm_test/gaussian_20cols_10000Rows.csv");
-      int[] catCol = new int[]{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-      for (int colInd : catCol)
-        train.replace((colInd), train.vec(colInd).toCategoricalVec()).remove();
-      DKV.put(train);
+      transformFrameCreateCoefNames(train);
       GLMModel.GLMParameters params = new GLMModel.GLMParameters(gaussian);
       params._standardize = false;
       params._response_column = "C21";
@@ -302,19 +327,15 @@ public class GLMConstrainedTest extends TestUtil {
     Scope.enter();
     try {
       Frame train = parseAndTrackTestFile("smalldata/glm_test/gaussian_20cols_10000Rows.csv");
-      int[] catCol = new int[]{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-      for (int colInd : catCol)
-        train.replace((colInd), train.vec(colInd).toCategoricalVec()).remove();
-      DKV.put(train);
+      transformFrameCreateCoefNames(train);
       GLMModel.GLMParameters params = new GLMModel.GLMParameters(gaussian);
       params._standardize = false;
       params._response_column = "C21";
       params._solver = IRLSM;
       params._train = train._key;
-      Frame linear_constraints = _linearConstraint3;
       params._max_iterations = 1;
       params._expose_constraints = true;
-      params._linear_constraints = linear_constraints._key;
+      params._linear_constraints = _linearConstraint3._key;
       params._lambda = new double[]{0};
       GLMModel glm2 = new GLM(params).trainModel().get();
       Scope.track_generic(glm2);
@@ -332,10 +353,7 @@ public class GLMConstrainedTest extends TestUtil {
     Scope.enter();
     try {
       Frame train = parseAndTrackTestFile("smalldata/glm_test/gaussian_20cols_10000Rows.csv");
-      int[] catCol = new int[]{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-      for (int colInd : catCol)
-        train.replace((colInd), train.vec(colInd).toCategoricalVec()).remove();
-      DKV.put(train);
+      transformFrameCreateCoefNames(train);
       GLMModel.GLMParameters params = new GLMModel.GLMParameters(gaussian);
       params._standardize = true;
       params._response_column = "C21";
@@ -364,19 +382,15 @@ public class GLMConstrainedTest extends TestUtil {
     Scope.enter();
     try {
       Frame train = parseAndTrackTestFile("smalldata/glm_test/gaussian_20cols_10000Rows.csv");
-      int[] catCol = new int[]{0,1,2,3,4,5,6,7,8,9};
-      for (int colInd : catCol)
-        train.replace((colInd), train.vec(colInd).toCategoricalVec()).remove();
-      DKV.put(train);
+      transformFrameCreateCoefNames(train);
       GLMModel.GLMParameters params = new GLMModel.GLMParameters(gaussian);
       params._standardize = false;
       params._response_column = "C21";
       params._solver = IRLSM;
       params._train = train._key;
-      Frame linear_constraints = _linearConstraint2;
       params._max_iterations = 1;
       params._expose_constraints = true;
-      params._linear_constraints = linear_constraints._key;
+      params._linear_constraints = _linearConstraint2._key;
       params._lambda = new double[]{0};
       GLMModel glm2 = new GLM(params).trainModel().get();
       Scope.track_generic(glm2);
@@ -386,7 +400,7 @@ public class GLMConstrainedTest extends TestUtil {
       // check rows from beta constraints
       int rowIndex = 0;
       assertCorrectConstraintMatrix(constraintNames, initConstraintMatrix, _equalityNames2, _equalityValues2, rowIndex);
-      // check row from linear contraints with lessThanEqualTo
+      // check row from linear constraints with lessThanEqualTo
       rowIndex += _equalityNames2.length;
       assertCorrectConstraintMatrix(constraintNames, initConstraintMatrix, _lessThanNames2, _lessThanValues2, rowIndex);
     } finally {
@@ -401,10 +415,7 @@ public class GLMConstrainedTest extends TestUtil {
     Scope.enter();
     try {
       Frame train = parseAndTrackTestFile("smalldata/glm_test/gaussian_20cols_10000Rows.csv");
-      int[] catCol = new int[]{0,1,2,3,4,5,6,7,8,9};
-      for (int colInd : catCol)
-        train.replace((colInd), train.vec(colInd).toCategoricalVec()).remove();
-      DKV.put(train);
+      transformFrameCreateCoefNames(train);
       GLMModel.GLMParameters params = new GLMModel.GLMParameters(gaussian);
       params._standardize = true;
       params._response_column = "C21";
@@ -448,7 +459,7 @@ public class GLMConstrainedTest extends TestUtil {
       for (int index2=0; index2<numNames; index2++) {
         int cNamesIndex = constraintNames.indexOf(constNames[index2]);
         assert Math.abs(constraintMatrix[rowIndex][cNamesIndex]-constValues[index2]) < EPS : 
-                "Expected valud: "+constValues[index2]+" for constraint "+constNames[index2]+" but actual: "
+                "Expected value: "+constValues[index2]+" for constraint "+constNames[index2]+" but actual: "
                         +constraintMatrix[rowIndex][cNamesIndex];
       }
     }
@@ -461,10 +472,7 @@ public class GLMConstrainedTest extends TestUtil {
     Scope.enter();
     try {
       Frame train = parseAndTrackTestFile("smalldata/glm_test/gaussian_20cols_10000Rows.csv");
-      int[] catCol = new int[]{0,1,2,3,4,5,6,7,8,9};
-      for (int colInd : catCol)
-        train.replace((colInd), train.vec(colInd).toCategoricalVec()).remove();
-      DKV.put(train);
+      transformFrameCreateCoefNames(train);
       GLMModel.GLMParameters params = new GLMModel.GLMParameters(gaussian);
       params._standardize=true;
       params._response_column = "C21";
@@ -494,10 +502,7 @@ public class GLMConstrainedTest extends TestUtil {
     Scope.enter();
     try {
       Frame train = parseAndTrackTestFile("smalldata/glm_test/gaussian_20cols_10000Rows.csv");
-      int[] catCol = new int[]{0,1,2,3,4,5,6,7,8,9};
-      for (int colInd : catCol)
-        train.replace((colInd), train.vec(colInd).toCategoricalVec()).remove();
-      DKV.put(train);
+      transformFrameCreateCoefNames(train);
       GLMModel.GLMParameters params = new GLMModel.GLMParameters(gaussian);
       params._standardize = true;
       params._response_column = "C21";
@@ -538,10 +543,7 @@ public class GLMConstrainedTest extends TestUtil {
     Scope.enter();
     try {
       Frame train = parseAndTrackTestFile("smalldata/glm_test/gaussian_20cols_10000Rows.csv");
-      int[] catCol = new int[]{0,1,2,3,4,5,6,7,8,9};
-      for (int colInd : catCol)
-        train.replace((colInd), train.vec(colInd).toCategoricalVec()).remove();
-      DKV.put(train);
+      transformFrameCreateCoefNames(train);
       List<String> coeffNames = _coeffNames1;
       // build the beta_constraints
       int coefLen = coeffNames.size()-1;
@@ -584,11 +586,7 @@ public class GLMConstrainedTest extends TestUtil {
     Scope.enter();
     try {
       Frame train = parseAndTrackTestFile("smalldata/glm_test/gaussian_20cols_10000Rows.csv");
-      int[] catCol = new int[]{0,1,2,3,4,5,6,7,8,9};
-      for (int colInd : catCol)
-        train.replace((colInd), train.vec(colInd).toCategoricalVec()).remove();
-      DKV.put(train);
-      List<String> coeffNames = _coeffNames1;
+      transformFrameCreateCoefNames(train);
       Frame linear_constraints = _linearConstraint2;
       
       GLMModel.GLMParameters params = new GLMModel.GLMParameters(gaussian);
@@ -618,10 +616,7 @@ public class GLMConstrainedTest extends TestUtil {
     Scope.enter();
     try {
       Frame train = parseAndTrackTestFile("smalldata/glm_test/gaussian_20cols_10000Rows.csv");
-      int[] catCol = new int[]{0,1,2,3,4,5,6,7,8,9};
-      for (int colInd : catCol)
-        train.replace((colInd), train.vec(colInd).toCategoricalVec()).remove();
-      DKV.put(train);
+      transformFrameCreateCoefNames(train);
       GLMModel.GLMParameters params = new GLMModel.GLMParameters(gaussian);
       params._standardize = true;
       params._response_column = "C21";
@@ -631,7 +626,6 @@ public class GLMConstrainedTest extends TestUtil {
       params._lambda = new double[]{0};
       GLMModel glm = new GLM(params).trainModel().get();
       Scope.track_generic(glm);
-      List<String> coeffNames = Stream.of(glm._output._coefficient_names).collect(Collectors.toList()); ;
       // build the beta_constraints
       Frame linear_constraints = _linearConstraint2;
       params._max_iterations = 1;
@@ -661,7 +655,7 @@ public class GLMConstrainedTest extends TestUtil {
       for (int ind = 0; ind < entryLen; ind++) {
         assert coefKeys.contains(coefName[ind]);
         assert Math.abs(value[index][ind] - oneConstraint._constraints.get(coefName[ind])) < EPS : "Expected: "+value[index][ind]+
-                ".  Actual: "+oneConstraint._constraints.get(coefName[ind])+".";
+                ".  Actual: "+oneConstraint._constraints.get(coefName[ind])+" for coefficient: "+coefName[ind]+".";
       }
     }
   }
