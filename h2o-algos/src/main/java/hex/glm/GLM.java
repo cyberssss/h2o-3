@@ -1352,6 +1352,15 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
     }
   }
 
+  /**
+   * This method will extract the constraints from beta_constraints followed by the constraints specified in the 
+   * linear_constraints.  The constraints are extracted into equality and lessthanequalto constraints from
+   * beta_constraints and linear constraints.
+   * 
+   * In addition, we extract all the constraints into a matrix and if the matrix is not full rank, constraints
+   * are redundant and an error will be thrown and the redundant constraints will be included in the error message
+   * so users can know which constraints to remove.
+   */
   void checkAssignLinearConstraints() {
     if (!IRLSM.equals(_parms._solver)) {  // only solver irlsm is allowed
       error("solver", "constrained GLM is only available for IRLSM.  PLease set solver to" +
@@ -3698,7 +3707,8 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
         throw H2OModelBuilderIllegalArgumentException.makeFromBuilder(GLM.this);
       _model._output._start_time = System.currentTimeMillis(); //quickfix to align output duration with other models
       if (_parms._expose_constraints) {
-        _model._output._fromBetaConstraints = _state._fromBetaConstraints;
+        _model._output._equalityConstraintsBeta = _state._equalityConstraintsBeta;
+        _model._output._lessThanEqualToConstraintsBeta = _state._lessThanEqualToConstraintsBeta;
         _model._output._equalityConstraints = _state._equalityConstraints;
         _model._output._lessThanEqualToConstraints = _state._lessThanEqualToConstraints;
         _model._output._constraintCoefficientNames = _state._csGLMState._constraintNames;

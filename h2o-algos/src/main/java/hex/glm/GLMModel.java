@@ -1580,7 +1580,8 @@ public class GLMModel extends Model<GLMModel,GLMModel.GLMParameters,GLMModel.GLM
     public int[] _activeColsPerClass;
     public ConstrainedGLMUtils.LinearConstraints[] _equalityConstraints = null;
     public ConstrainedGLMUtils.LinearConstraints[] _lessThanEqualToConstraints = null;
-    public ConstrainedGLMUtils.LinearConstraints[] _fromBetaConstraints = null;
+    public ConstrainedGLMUtils.LinearConstraints[] _equalityConstraintsBeta = null;
+    public ConstrainedGLMUtils.LinearConstraints[] _lessThanEqualToConstraintsBeta = null;
     public String[] _constraintCoefficientNames = null;
     public double[][] _initConstraintMatrix = null;
     public boolean hasPValues(){return _zvalues != null;}

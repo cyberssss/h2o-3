@@ -63,24 +63,26 @@ public class ConstrainedGLMUtils {
    */
   public static void extractBetaConstraints(ComputationState state, String[] coefNames) {
     GLM.BetaConstraint betaC = state.activeBC();
-    List<LinearConstraints> betaConstraints = new ArrayList<>();
+    List<LinearConstraints> equalityC = new ArrayList<>();
+    List<LinearConstraints> lessThanEqualToC = new ArrayList<>();
     if (betaC._betaLB != null) {
       int numCons = betaC._betaLB.length-1;
       for (int index=0; index<numCons; index++) {
         if (!Double.isInfinite(betaC._betaUB[index]) && (betaC._betaLB[index] == betaC._betaUB[index])) { // equality constraint
-          addBCEqualityConstraint(betaConstraints, betaC, coefNames, index);
+          addBCEqualityConstraint(equalityC, betaC, coefNames, index);
         } else if (!Double.isInfinite(betaC._betaUB[index]) && !Double.isInfinite(betaC._betaLB[index]) && 
                 (betaC._betaLB[index] < betaC._betaUB[index])) { // low < beta < high, generate two lessThanEqualTo constraints
-          addBCGreaterThanConstraint(betaConstraints, betaC, coefNames, index);
-          addBCLessThanConstraint(betaConstraints, betaC, coefNames, index);
-        } else if (Double.isInfinite(betaC._betaUB[index]) && !Double.isInfinite(betaC._betaLB[index])) {  // low < beta < positive infinity
-          addBCGreaterThanConstraint(betaConstraints, betaC, coefNames, index);
-        } else if (!Double.isInfinite(betaC._betaUB[index]) && Double.isInfinite(betaC._betaLB[index])) { // negative infinity < beta < high
-          addBCLessThanConstraint(betaConstraints, betaC, coefNames, index);
+          addBCGreaterThanConstraint(lessThanEqualToC, betaC, coefNames, index);
+          addBCLessThanConstraint(lessThanEqualToC, betaC, coefNames, index);
+        } else if (Double.isInfinite(betaC._betaUB[index]) && !Double.isInfinite(betaC._betaLB[index])) {  // low < beta < infinity
+          addBCGreaterThanConstraint(lessThanEqualToC, betaC, coefNames, index);
+        } else if (!Double.isInfinite(betaC._betaUB[index]) && Double.isInfinite(betaC._betaLB[index])) { // -infinity < beta < high
+          addBCLessThanConstraint(lessThanEqualToC, betaC, coefNames, index);
         }
       }
     }
-    state._fromBetaConstraints = betaConstraints.toArray(new LinearConstraints[0]);
+    state.setLinearConstraints(equalityC.toArray(new LinearConstraints[0]),
+            lessThanEqualToC.toArray(new LinearConstraints[0]), true);
   }
 
   /***
@@ -158,7 +160,7 @@ public class ConstrainedGLMUtils {
       }
     }
     state.setLinearConstraints(equalityC.toArray(new LinearConstraints[0]), 
-            lessThanEqualToC.toArray(new LinearConstraints[0]));
+            lessThanEqualToC.toArray(new LinearConstraints[0]), false);
   }
   
   public static void extractConstraint(Frame constraintF, List<Integer> rowIndices, List<LinearConstraints> equalC,
@@ -204,7 +206,8 @@ public class ConstrainedGLMUtils {
     // extract coefficient names from constraints
     constraintNamesList.addAll(extractConstraintCoeffs(state));
     // form double matrix
-    int numRow = (state._fromBetaConstraints == null ? 0 : state._fromBetaConstraints.length) +
+    int numRow = (state._equalityConstraintsBeta == null ? 0 : state._equalityConstraintsBeta.length) +
+            (state._lessThanEqualToConstraintsBeta == null ? 0 : state._lessThanEqualToConstraintsBeta.length) +
             (state._equalityConstraints == null ? 0 : state._equalityConstraints.length) + 
             (state._lessThanEqualToConstraints == null ? 0 : state._lessThanEqualToConstraints.length);
     double[][] initConstraintMatrix = new double[numRow][constraintNamesList.size()];
@@ -214,8 +217,10 @@ public class ConstrainedGLMUtils {
   
   public static void fillConstraintValues(ComputationState state, List<String> constraintNamesList, double[][] initCMatrix) {
     int rowIndex = 0;
-    if (state._fromBetaConstraints != null)
-      rowIndex = extractConstraintValues(state._fromBetaConstraints, constraintNamesList, initCMatrix, rowIndex);
+    if (state._equalityConstraintsBeta != null)
+      rowIndex = extractConstraintValues(state._equalityConstraintsBeta, constraintNamesList, initCMatrix, rowIndex);
+    if (state._lessThanEqualToConstraintsBeta != null)
+      rowIndex= extractConstraintValues(state._lessThanEqualToConstraintsBeta, constraintNamesList, initCMatrix, rowIndex);
     if (state._equalityConstraints != null)
       rowIndex = extractConstraintValues(state._equalityConstraints, constraintNamesList, initCMatrix, rowIndex);
     if (state._lessThanEqualToConstraints != null)
@@ -238,8 +243,11 @@ public class ConstrainedGLMUtils {
   public static List<String> extractConstraintCoeffs(ComputationState state) {
     List<String> tConstraintCoeffName = new ArrayList<>();
     boolean nonZeroConstant = false;
-    if (state._fromBetaConstraints != null)   // extract coefficients constraints
-      nonZeroConstant = nonZeroConstant | extractCoeffNames(tConstraintCoeffName, state._fromBetaConstraints);
+    if (state._equalityConstraintsBeta != null)
+      nonZeroConstant = nonZeroConstant | extractCoeffNames(tConstraintCoeffName, state._equalityConstraintsBeta);
+
+    if (state._lessThanEqualToConstraintsBeta != null)
+      nonZeroConstant = nonZeroConstant | extractCoeffNames(tConstraintCoeffName, state._lessThanEqualToConstraintsBeta);
 
     if (state._equalityConstraints != null)
       nonZeroConstant = nonZeroConstant | extractCoeffNames(tConstraintCoeffName, state._equalityConstraints);
@@ -346,11 +354,19 @@ public class ConstrainedGLMUtils {
   
   public static LinearConstraints getConstraintFromIndex(ComputationState state, Integer constraintIndex) {
     int constIndexWOffset = constraintIndex;
-    if (state._fromBetaConstraints != null) {
-      if (constIndexWOffset < state._fromBetaConstraints.length) {
-        return state._fromBetaConstraints[constIndexWOffset];
+    if (state._equalityConstraintsBeta != null) {
+      if (constIndexWOffset < state._equalityConstraintsBeta.length) {
+        return state._equalityConstraintsBeta[constIndexWOffset];
       } else {
-        constIndexWOffset -= state._fromBetaConstraints.length;
+        constIndexWOffset -= state._equalityConstraintsBeta.length;
+      }
+    }
+    
+    if (state._lessThanEqualToConstraintsBeta != null) {
+      if (constIndexWOffset < state._lessThanEqualToConstraintsBeta.length) {
+        return state._lessThanEqualToConstraintsBeta[constIndexWOffset];
+      } else {
+        constIndexWOffset -= state._lessThanEqualToConstraintsBeta.length;
       }
     }
     

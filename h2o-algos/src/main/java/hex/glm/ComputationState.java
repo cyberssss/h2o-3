@@ -50,7 +50,8 @@ public final class ComputationState {
   private BetaConstraint _activeBC;
   LinearConstraints[] _equalityConstraints = null;
   LinearConstraints[] _lessThanEqualToConstraints = null;
-  LinearConstraints[] _fromBetaConstraints = null;
+  LinearConstraints[] _equalityConstraintsBeta = null;
+  LinearConstraints[] _lessThanEqualToConstraintsBeta = null;
   private final GLM.BetaInfo _modelBetaInfo;
   private double[] _beta; // vector of coefficients corresponding to active data
   private double[] _ubeta;  // HGLM, store coefficients of random effects;
@@ -520,9 +521,14 @@ public final class ComputationState {
     _activeBC = _bc;
   }
   
-  public void setLinearConstraints(LinearConstraints[] equalityC, LinearConstraints[] lessThanEualToC) {
-     _equalityConstraints = equalityC;
-     _lessThanEqualToConstraints = lessThanEualToC;
+  public void setLinearConstraints(LinearConstraints[] equalityC, LinearConstraints[] lessThanEualToC, boolean forBeta) {
+     if (forBeta) {
+       _equalityConstraintsBeta = equalityC;
+       _lessThanEqualToConstraintsBeta = lessThanEualToC;
+     } else {
+       _equalityConstraints = equalityC;
+       _lessThanEqualToConstraints = lessThanEualToC;
+     }
   }
 
   public void setActiveClass(int activeClass) {_activeClass = activeClass;}
