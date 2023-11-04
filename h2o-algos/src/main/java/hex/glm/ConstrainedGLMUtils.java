@@ -23,8 +23,8 @@ public class ConstrainedGLMUtils {
   public static final double BETACS = 0.9;
   
   public static class LinearConstraints extends Iced { // store one linear constraint
-    IcedHashMap<String, Double> _constraints; // column names, coefficient of constraints
-    double _constraintsVal; // contains evaluated constraint values
+    public IcedHashMap<String, Double> _constraints; // column names, coefficient of constraints
+    public double _constraintsVal; // contains evaluated constraint values
     
     public LinearConstraints() {
       _constraints = new IcedHashMap<>();
@@ -43,6 +43,15 @@ public class ConstrainedGLMUtils {
       _constraintNames = constrainNames;
       _initCSMatrix = initMatrix;
     }
+  }
+  
+  public static List<LinearConstraints> combineConstraints(LinearConstraints[] const1, LinearConstraints[] const2) {
+    List<LinearConstraints> allList = new ArrayList<>();
+    if (const1 != null)
+      allList.addAll(Arrays.stream(const1).collect(Collectors.toList()));
+    if (const2 != null)
+      allList.addAll(Arrays.stream(const2).collect(Collectors.toList()));
+    return allList;
   }
 
   /***
@@ -382,5 +391,42 @@ public class ConstrainedGLMUtils {
       return state._lessThanEqualToConstraints[constIndexWOffset];
     }
     return null;
+  }
+  
+  public static List<LinearConstraints> extractActiveConstraints(List<LinearConstraints> lessThanEqualToConstraints,
+                                                                 double[] beta, List<String> coeffNames) {
+    List<LinearConstraints> activeConstraints = new ArrayList<>();
+    // evaluate all constraint values
+    lessThanEqualToConstraints.parallelStream().forEach(constraint -> evalOneConstraint(constraint, beta, coeffNames));
+    // only include constraint with val >= 0 into activeConstraints
+    lessThanEqualToConstraints.stream().forEach(constraint -> {
+      if (constraint._constraintsVal >= 0) activeConstraints.add(constraint);
+    });
+    return activeConstraints;
+  }
+  
+  public static void evalOneConstraint(LinearConstraints constraint, double[] beta, List<String> coeffNames) {
+    double sumV = 0.0;
+    Map<String, Double> constraints = constraint._constraints;
+    for (String coeff : constraints.keySet()) {
+      if ("constant".equals(coeff))
+        sumV += constraints.get(coeff);
+      else
+        sumV += constraints.get(coeff)*beta[coeffNames.indexOf(coeff)];
+    }
+    constraint._constraintsVal = sumV;
+  }
+
+  public static List<Double> genInitialLambda(Random randObj, List<LinearConstraints> constraints) {
+    int numC = constraints.size();
+    double randVal;
+    List<Double> lambda = new ArrayList<>();
+    for (int index=0; index<numC; index++) {
+      randVal = randObj.nextDouble();
+      if (!(Math.signum(constraints.get(index)._constraintsVal)  ==  Math.signum(randVal)))
+        randVal = -1*randVal; // change sign so that lambda * constraint Value >= 0
+      lambda.add(randVal);
+    }
+    return lambda;
   }
 }
