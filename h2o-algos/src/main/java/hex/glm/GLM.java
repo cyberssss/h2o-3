@@ -1657,8 +1657,13 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
     private transient Cholesky _chol;
     private transient L1Solver _lslvr;
 
+    private double[] constraintGLM_solve(Gram gram, double[] xy) {
+      if (!_parms._intercept) throw H2O.unimpl();
+      return xy;
+    }
+    
     private double[] ADMM_solve(Gram gram, double[] xy) {
-      if (_parms._remove_collinear_columns || _parms._compute_p_values) {
+      if (_parms._remove_collinear_columns || _parms._compute_p_values) { // called when there is no regularization
         if (!_parms._intercept) throw H2O.unimpl();
         ArrayList<Integer> ignoredCols = new ArrayList<>();
         Cholesky chol = ((_state._iter == 0) ? gram.qrCholesky(ignoredCols, _parms._standardize) : gram.cholesky(null));
@@ -1684,7 +1689,7 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
         }
         xy = xy.clone();
         chol.solve(xy);
-      } else {
+      } else {  // admm solve is only used when there is l1 regularization (lasso).
         gram = gram.deep_clone();
         xy = xy.clone();
         GramSolver slvr = new GramSolver(gram.clone(), xy.clone(), _parms._intercept, _state.l2pen(), _state.l1pen(), _state.activeBC()._betaGiven, _state.activeBC()._rho, _state.activeBC()._betaLB, _state.activeBC()._betaUB);
@@ -2270,20 +2275,21 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
     private void fitIRLSMCS(Solver s) {
       double[] betaCnd = _checkPointFirstIter ? _model._betaCndCheckpoint : _state.beta();
       List<String> coeffNames = Arrays.stream(_dinfo._coefNames).collect(Collectors.toList());
-      List<LinearConstraints> equalityConstraints = combineConstraints(_state._equalityConstraintsBeta, _state._equalityConstraints);
-      List<LinearConstraints> lessThanEqualToConstraints = combineConstraints(_state._lessThanEqualToConstraintsBeta, _state._lessThanEqualToConstraints);
+      LinearConstraints[] equalityConstraints = combineConstraints(_state._equalityConstraintsBeta, _state._equalityConstraints);
+      LinearConstraints[] lessThanEqualToConstraints = combineConstraints(_state._lessThanEqualToConstraintsBeta, _state._lessThanEqualToConstraints);
       final double[] betaF = betaCnd.clone();
-      boolean notEmptyEqualityC = equalityConstraints.size() > 0;
-      List<Double> lambdaEqual; // length won't change
+      boolean notEmptyEqualityC = equalityConstraints.length > 0;
+      double[] lambdaEqual = new double[equalityConstraints.length];
+      double[] lambdaLessThan = new double[lessThanEqualToConstraints.length];
       Long startSeed = _parms._seed == -1 ? new Random().nextLong() : _parms._seed;
       Random randObj = new Random(startSeed);
 
-      List<LinearConstraints> lessThanActiveConstraints = extractActiveConstraints(lessThanEqualToConstraints, betaF, coeffNames);
+      extractActiveConstraints(lessThanEqualToConstraints, betaF, coeffNames);
       if (notEmptyEqualityC) { // initialize lambda for equality constraints
-        equalityConstraints.parallelStream().forEach(constraint -> evalOneConstraint(constraint, betaF, coeffNames));
-        lambdaEqual = genInitialLambda(randObj, equalityConstraints);
+        Arrays.stream(equalityConstraints).collect(Collectors.toList()).parallelStream().forEach(constraint -> evalOneConstraint(constraint, betaF, coeffNames));
+        genInitialLambda(randObj, equalityConstraints, lambdaEqual);
       }
-      List<Double> lambdaLessThan = genInitialLambda(randObj, lessThanActiveConstraints);
+      genInitialLambda(randObj, lessThanEqualToConstraints, lambdaLessThan);
       LineSearchSolver ls = null;
       int iterCnt = _checkPointFirstIter ? _state._iter : 0;
       boolean firstIter = iterCnt == 0;
@@ -2305,8 +2311,7 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
               return;
             }
             if (!_checkPointFirstIter)
-              betaCnd = s == Solver.COORDINATE_DESCENT ? COD_solve(gram, _state._alpha, _state.lambda())
-                      : ADMM_solve(gram.gram, gram.xy); // this will shrink betaCnd if needed but this call may be skipped
+              betaCnd = constraintGLM_solve(gram.gram, gram.xy); // this will shrink betaCnd if needed but this call may be skipped
           }
           firstIter = false;
           _checkPointFirstIter = false;
