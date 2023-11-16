@@ -33,7 +33,17 @@ public class ConstrainedGLMUtils {
     }
   }
   
+  public static class ConstraintsDerivatives extends Iced {
+    public IcedHashMap<Integer, Double> _constraintsDerivative;
+    public boolean _equalityConstraint = false; // needed to distinguish equality and active lessthanequalto constraints
+    
+    public ConstraintsDerivatives() {
+      _constraintsDerivative = new IcedHashMap<>();
+    }
+  }
+  
   public static class ConstraintGLMStates {
+    double _ckCS = C0CS;
     double _epsilonkCS = 1.0/C0CS;
     double _etakCS = ETA0CS*Math.pow(C0CS, ALPHACS);
     String[] _constraintNames;
@@ -52,7 +62,7 @@ public class ConstrainedGLMUtils {
       allList.addAll(Arrays.stream(const1).collect(Collectors.toList()));
     if (const2 != null)
       allList.addAll(Arrays.stream(const2).collect(Collectors.toList()));
-    return allList.stream().toArray(LinearConstraints[]::new);
+    return allList.size()==0 ? null : allList.stream().toArray(LinearConstraints[]::new);
   }
 
   /***
@@ -421,12 +431,8 @@ public class ConstrainedGLMUtils {
 
   public static void genInitialLambda(Random randObj, LinearConstraints[] constraints, double[] lambda) {
     int numC = constraints.length;
-    double randVal;
     for (int index=0; index<numC; index++) {
-      randVal = randObj.nextDouble();
-      if (!(constraints[index]._constraintsVal == 0.0) && !(Math.signum(constraints[index]._constraintsVal)  ==  Math.signum(randVal)))
-        randVal = -1*randVal; // change sign so that lambda * constraint Value >= 0
-      lambda[index] = randVal;
+      lambda[index] = randObj.nextGaussian();
     }
   }
 }

@@ -71,6 +71,8 @@ public final class ComputationState {
   int[][] _gamBetaIndices;
   int _totalBetaLength; // actual coefficient length without taking into account active columns only
   int _betaLengthPerClass;
+  public boolean _noReg;
+  public boolean _hasConstraints;
   ConstrainedGLMUtils.ConstraintGLMStates _csGLMState;
 
   public ComputationState(Job job, GLMParameters parms, DataInfo dinfo, BetaConstraint bc, GLM.BetaInfo bi){
@@ -91,6 +93,11 @@ public final class ComputationState {
         _likelihoodInfo = new double[4];
     }
     _modelBetaInfo = bi;
+  }
+  
+  // set _noReg to true if l1 and l2 regularization are both zero.
+  public void setNoReg() {
+    _noReg = (_lambda == 0.0);
   }
 
   public ComputationState(Job job, GLMParameters parms, DataInfo dinfo, BetaConstraint bc, GLM.BetaInfo bi, 
@@ -853,7 +860,25 @@ public final class ComputationState {
     }
     return likelihood * _parms._obj_reg + gamVal + penalty(beta) + (_activeBC == null?0:_activeBC.proxPen(beta));
   }
-  protected double  updateState(double [] beta, double likelihood) {
+  
+  // calculate transpose(lambda)*constraints
+  public static double calConstraintsVal(double[] lambdaEqual, double[] lambdaLessThan, LinearConstraints[] equalC, 
+                                  LinearConstraints[] lessThanC) {
+    double constrainVal = 0;
+    if (lambdaEqual == null)
+      constrainVal += IntStream.range(0, lambdaEqual.length).mapToDouble(x -> lambdaEqual[x]*equalC[x]._constraintsVal).sum();
+    constrainVal += IntStream.range(0, lambdaEqual.length).filter(x -> lessThanC[x]._constraintsVal >= 0).mapToDouble(x -> lambdaLessThan[x] * equalC[x]._constraintsVal).sum();
+    return constrainVal;
+  }
+  
+  public double calConstratintsSquare(LinearConstraints[] equalC, LinearConstraints[] lessThanC) {
+    double sumVal  = equalC == null ? 0 : Arrays.stream(equalC).mapToDouble(x ->  x._constraintsVal*x._constraintsVal).sum();
+    sumVal += Arrays.stream(lessThanC).filter(x -> (x._constraintsVal > 0)).mapToDouble(x -> x._constraintsVal*x._constraintsVal).sum();
+    return sumVal*_csGLMState._ckCS*0.5;
+  }
+  
+  
+  protected double updateState(double [] beta, double likelihood) {
     _betaDiff = ArrayUtils.linfnorm(_beta == null?beta:ArrayUtils.subtract(_beta,beta),false);
     double objOld = objective();
     _beta = beta;
@@ -1031,7 +1056,7 @@ public final class ComputationState {
     double obj_reg = _parms._obj_reg;
     if(_glmw == null) _glmw = new GLMModel.GLMWeightsFun(_parms);
     GLMTask.GLMIterationTask gt = new GLMTask.GLMIterationTask(_job._key, activeData, _glmw, beta,
-            _activeClass).doAll(activeData._adaptedFrame);
+            _activeClass, _hasConstraints).doAll(activeData._adaptedFrame);
     gt._gram.mul(obj_reg);
     if (_parms._glmType.equals(GLMParameters.GLMType.gam)) { // add contribution from GAM smoothness factor
         Integer[] activeCols=null;
