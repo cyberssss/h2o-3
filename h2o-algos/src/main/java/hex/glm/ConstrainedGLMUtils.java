@@ -35,7 +35,7 @@ public class ConstrainedGLMUtils {
   
   public static class ConstraintsDerivatives extends Iced {
     public IcedHashMap<Integer, Double> _constraintsDerivative;
-    public boolean _equalityConstraint = false; // needed to distinguish equality and active lessthanequalto constraints
+    public boolean _active;
     
     public ConstraintsDerivatives() {
       _constraintsDerivative = new IcedHashMap<>();

@@ -2282,19 +2282,20 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
       LinearConstraints[] equalityConstraints = combineConstraints(_state._equalityConstraintsBeta, _state._equalityConstraints);
       LinearConstraints[] lessThanEqualToConstraints = combineConstraints(_state._lessThanEqualToConstraintsBeta, _state._lessThanEqualToConstraints);
       final double[] betaF = betaCnd.clone();
-      boolean notEmptyEqualityC = equalityConstraints != null;
-      double[] lambdaEqual = equalityConstraints == null ? null : new double[equalityConstraints.length];
+      boolean hasEqualityConstraints = equalityConstraints != null;
+      double[] lambdaEqual = hasEqualityConstraints ? new double[equalityConstraints.length] : null;
       double[] lambdaLessThan = new double[lessThanEqualToConstraints.length];
-      double[] lambdaEqualNew, lambdaLessThanNew;
       Long startSeed = _parms._seed == -1 ? new Random().nextLong() : _parms._seed;
       Random randObj = new Random(startSeed);
 
       extractActiveConstraints(lessThanEqualToConstraints, betaF, coeffNames);
-      if (notEmptyEqualityC) { // initialize lambda for equality constraints
+      if (hasEqualityConstraints) { // initialize lambda for equality constraints
         Arrays.stream(equalityConstraints).collect(Collectors.toList()).parallelStream().forEach(constraint -> evalOneConstraint(constraint, betaF, coeffNames));
         genInitialLambda(randObj, equalityConstraints, lambdaEqual);
       }
       genInitialLambda(randObj, lessThanEqualToConstraints, lambdaLessThan);
+      double[] lambdaEqualNew = lambdaEqual == null ? 
+      double [] lambdaLessThanNew;
       LineSearchSolver ls = null;
       int iterCnt = _checkPointFirstIter ? _state._iter : 0;
       boolean firstIter = iterCnt == 0;

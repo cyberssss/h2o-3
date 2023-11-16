@@ -1095,6 +1095,37 @@ public final class ComputationState {
       return computeNewGram(_activeData, ArrayUtils.select(beta, _activeData.activeCols()), s);
   }
 
+  protected GramXY computeGram(double [] beta, double[] lambdaE, double[] lambdaL){
+    DataInfo activeData = activeData();
+    double obj_reg = _parms._obj_reg;
+    if(_glmw == null) _glmw = new GLMModel.GLMWeightsFun(_parms);
+    GLMTask.GLMIterationTask gt = new GLMTask.GLMIterationTask(_job._key, activeData, _glmw, beta,
+            _activeClass, _hasConstraints).doAll(activeData._adaptedFrame);
+    gt._gram.mul(obj_reg);
+    if (_parms._glmType.equals(GLMParameters.GLMType.gam)) { // add contribution from GAM smoothness factor
+      Integer[] activeCols=null;
+      int[] activeColumns = activeData.activeCols();
+      if (activeColumns.length<_dinfo.fullN()) { // columns are deleted
+        activeCols = ArrayUtils.toIntegers(activeColumns, 0, activeColumns.length);
+      }
+      gt._gram.addGAMPenalty(activeCols , _penaltyMatrix, _gamBetaIndices);
+    }
+    ArrayUtils.mult(gt._xy,obj_reg);
+    int [] activeCols = activeData.activeCols();
+    int [] zeros = gt._gram.findZeroCols();
+    GramXY res;
+    if(_parms._family != Family.multinomial && zeros.length > 0 && zeros.length <= activeData.activeCols().length) {
+      gt._gram.dropCols(zeros);
+      removeCols(zeros);
+      res = new ComputationState.GramXY(gt._gram,ArrayUtils.removeIds(gt._xy, zeros),null,
+              gt._beta == null?null:ArrayUtils.removeIds(gt._beta, zeros),activeData().activeCols(),null,
+              gt._yy,gt._likelihood);
+    } else res = new GramXY(gt._gram,gt._xy,null, beta,activeCols,null,gt._yy,gt._likelihood);
+    if (gaussian.equals(_parms._family))
+      res.sumOfRowWeights = gt.sumOfRowWeights;
+    return res;
+  }
+
   // get cached gram or incrementally update or compute new one
   public GramXY computeGram(double [] beta, GLMParameters.Solver s){
     double obj_reg = _parms._obj_reg;
