@@ -11,10 +11,9 @@ import water.fvec.Frame;
 import water.fvec.TestFrameBuilder;
 import water.runner.CloudSize;
 import water.runner.H2ORunner;
+import water.util.IcedHashMap;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -53,6 +52,14 @@ public class GLMConstrainedTest extends TestUtil {
   double[][] _lessThanValues2;
   double[][] _lessThanValuesStandard2;
   int[] _catCol = new int[]{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+  ConstrainedGLMUtils.LinearConstraints[] _equalityConstr;
+  ConstrainedGLMUtils.LinearConstraints[] _lessThanConstr;
+  ConstrainedGLMUtils.ConstraintsDerivatives[] _cdEqual;
+  ConstrainedGLMUtils.ConstraintsDerivatives[] _cdLess;
+  ConstrainedGLMUtils.ConstraintsGram[] _cGEqual;
+  ConstrainedGLMUtils.ConstraintsGram[] _cGLess;
+  List<String> _coeffsDG;
+  
   
   @Before
   public void setup() {
@@ -63,6 +70,65 @@ public class GLMConstrainedTest extends TestUtil {
     generateConstraint2FrameNAnswer(train);
     generateConstraint3FrameNAnswer();
     generateConstraint4FrameNAnswer();
+    generateConstraints();
+    generateDerivativeAnswer();
+    generateGramAnswer();
+  }
+
+  /**
+   * We have fake predictors C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11 and constraints of 
+   * a). 0.4*C1 + 0.2*C2+10 <= 0, b) C1-0.3*C3 == 0, c). 10*C3-4*C4 -100 <= 0, d) 11*C4 - 2.4*C5 == 0, 
+   * e) -1.5*C6-2.8*C7 <= 0; f) -9.3*C10+1.3*C11+0.4 == 0.
+   *    
+   *  The coefficient list is C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11 with C1 at index 0, C2 at index 1 and ...
+   */
+  public void generateConstraints() {
+    _coeffsDG = new ArrayList<>(Arrays.asList("C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10", "C11", "C2"));
+    _equalityConstr = new ConstrainedGLMUtils.LinearConstraints[3];
+    _lessThanConstr = new ConstrainedGLMUtils.LinearConstraints[3];
+    _equalityConstr[0] = makeOneConstraint(new String[]{"C1", "C3"}, new double[]{1, -0.3});
+    _equalityConstr[1] = makeOneConstraint(new String[]{"C4", "C5"}, new double[]{11, -2.4});
+    _equalityConstr[2] = makeOneConstraint(new String[]{"C10", "C11", "Constant"}, new double[]{-9.3, 1.3, 0.4});
+    
+    _lessThanConstr[0] = makeOneConstraint(new String[]{"C1", "C2", "Constant"}, new double[]{0.4, 0.2, 10});
+    _lessThanConstr[1] = makeOneConstraint(new String[]{"C3", "C4", "Constant"}, new double[]{10, -4, -100});
+    _lessThanConstr[2] = makeOneConstraint(new String[]{"C6", "C7"}, new double[]{-1.5, -2.8});
+  }
+  
+  public ConstrainedGLMUtils.LinearConstraints makeOneConstraint(String[] coeffNames, double[] constrVal) {
+    ConstrainedGLMUtils.LinearConstraints constraint = new ConstrainedGLMUtils.LinearConstraints();
+    int numCoeffs = coeffNames.length;
+    for (int index=0; index<numCoeffs; index++) {
+      constraint._constraints.put(coeffNames[index], constrVal[index]);
+    }
+    return constraint;
+  }
+
+  /***
+   * We are testing the correct implementation of derivatives generation from constrainted GLM.  We have fake
+   * predictors C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11 and constraints of a). 0.4*C1 + 0.2*C2+10 <= 0, b) C1-0.3*C3 == 0,
+   * c). 10*C3-4*C4 -100 <= 0, d) 11*C4 - 2.4*C5 == 0, e) -1.5*C6-2.8*C7 <= 0; f) -9.3*C10+1.3*C11 == 0.
+   *
+   * The coefficient list is C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11 with C1 at index 0, C2 at index 1 and ...
+   *
+   * In this case, the correct answer should be:
+   * Equality constraints derivatives:
+   * (0, 1), (2, -0.3), 
+   * (3, 11), (4, -2.4), 
+   * (9, -9,3), (10, 1.3)
+   *
+   * less than equal to constraints derivatives:
+   * (0, 0.4), (1, 0.2)
+   * (2, 10), (3, -4)
+   * (5, -1.5), (6, -2.8)
+   *
+   */
+  public void generateDerivativeAnswer() {
+
+  }
+
+  public void generateGramAnswer() {
+
   }
 
   public void generateConstraint4FrameNAnswer() {
@@ -661,6 +727,12 @@ public class GLMConstrainedTest extends TestUtil {
     } finally {
       Scope.exit();
     }
+  }
+
+
+  @Test
+  public void testConstraintsDerivative() {
+    
   }
 
   public void assertCorrectConstraintContent(String[][] coefNames, double[][] value,
