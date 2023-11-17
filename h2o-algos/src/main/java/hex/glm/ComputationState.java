@@ -14,11 +14,15 @@ import water.Job;
 import water.MemoryManager;
 import water.fvec.Frame;
 import water.util.ArrayUtils;
+import water.util.IcedHashMap;
 import water.util.Log;
 import water.util.MathUtils;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.List;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static hex.glm.ConstrainedGLMUtils.LinearConstraints;
@@ -875,6 +879,52 @@ public final class ComputationState {
     double sumVal  = equalC == null ? 0 : Arrays.stream(equalC).mapToDouble(x ->  x._constraintsVal*x._constraintsVal).sum();
     sumVal += Arrays.stream(lessThanC).filter(x -> (x._constraintsVal > 0)).mapToDouble(x -> x._constraintsVal*x._constraintsVal).sum();
     return sumVal*_csGLMState._ckCS*0.5;
+  }
+
+  public static ConstrainedGLMUtils.ConstraintsDerivatives[] calDerivatives(LinearConstraints[] equalityConstraints, List<String> coeffNames) {
+    int numConstraints = equalityConstraints.length;
+    ConstrainedGLMUtils.ConstraintsDerivatives[] constDeriv = new ConstrainedGLMUtils.ConstraintsDerivatives[numConstraints];
+    LinearConstraints oneConstraint;
+    for (int index=0; index<numConstraints; index++) {
+      oneConstraint = equalityConstraints[index];
+      constDeriv[index] = genOneDerivative(oneConstraint, coeffNames);
+    }
+    return constDeriv;
+  }
+  
+  public static ConstrainedGLMUtils.ConstraintsDerivatives genOneDerivative(LinearConstraints oneConstraints, List<String> coeffNames) {
+    ConstrainedGLMUtils.ConstraintsDerivatives constraintDerivative = new ConstrainedGLMUtils.ConstraintsDerivatives();
+    constraintDerivative._active = oneConstraints._active;
+    IcedHashMap<String, Double> coeffNameValues = oneConstraints._constraints;
+    IcedHashMap<Integer, Double> indexMultiplier = new IcedHashMap<Integer, Double>();
+    int index;
+    for (String coefName: coeffNameValues.keySet()) {
+      index = coeffNames.indexOf(coefName);
+      if (index >= 0)
+        indexMultiplier.put(index, coeffNameValues.get(coefName));
+    }
+    return constraintDerivative;
+  }
+  
+  public static ConstrainedGLMUtils.ConstraintsGram[] calGram(ConstrainedGLMUtils.ConstraintsDerivatives[] derivativeEqual) {
+    ConstrainedGLMUtils.ConstraintsGram[] gramFromConstraints = Arrays.stream(derivativeEqual).map(x -> constructGram(x)).toArray(ConstrainedGLMUtils.ConstraintsGram[]::new);
+    return gramFromConstraints;
+  }
+  
+  public static ConstrainedGLMUtils.ConstraintsGram constructGram(ConstrainedGLMUtils.ConstraintsDerivatives constDeriv) {
+    ConstrainedGLMUtils.ConstraintsGram cGram = new ConstrainedGLMUtils.ConstraintsGram();
+    List<Integer> predictorIndexc = constDeriv._constraintsDerivative.keySet().stream().collect(Collectors.toList());
+    Collections.sort(predictorIndexc);
+    while (!predictorIndexc.isEmpty()) {
+      Integer firstEle = predictorIndexc.get(0);
+      for (Integer oneCoeff : predictorIndexc) {
+        ConstrainedGLMUtils.CoefIndices coefPairs = new ConstrainedGLMUtils.CoefIndices(firstEle, oneCoeff);
+        cGram._coefIndicesValue.put(coefPairs, constDeriv._constraintsDerivative.get(firstEle)*constDeriv._constraintsDerivative.get(oneCoeff));
+      }
+      predictorIndexc.remove(0);
+    }
+    cGram._active = constDeriv._active;
+    return cGram;
   }
   
   

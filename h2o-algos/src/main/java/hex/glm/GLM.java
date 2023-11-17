@@ -2287,19 +2287,22 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
       double[] lambdaLessThan = new double[lessThanEqualToConstraints.length];
       Long startSeed = _parms._seed == -1 ? new Random().nextLong() : _parms._seed;
       Random randObj = new Random(startSeed);
-
       extractActiveConstraints(lessThanEqualToConstraints, betaF, coeffNames);
       if (hasEqualityConstraints) { // initialize lambda for equality constraints
         Arrays.stream(equalityConstraints).collect(Collectors.toList()).parallelStream().forEach(constraint -> evalOneConstraint(constraint, betaF, coeffNames));
         genInitialLambda(randObj, equalityConstraints, lambdaEqual);
       }
       genInitialLambda(randObj, lessThanEqualToConstraints, lambdaLessThan);
-      double[] lambdaEqualNew = lambdaEqual == null ? 
-      double [] lambdaLessThanNew;
+      double[] lambdaEqualNew = hasEqualityConstraints ? lambdaEqual.clone() : null; 
+      double [] lambdaLessThanNew = lambdaLessThan.clone();
       LineSearchSolver ls = null;
       int iterCnt = _checkPointFirstIter ? _state._iter : 0;
       boolean firstIter = iterCnt == 0;
-      double objConstraints;       
+      double objConstraints;
+      ConstraintsDerivatives[] derivativeEqual = hasEqualityConstraints ? calDerivatives(equalityConstraints, coeffNames) : null;
+      ConstraintsDerivatives[] derivativeLess = calDerivatives(lessThanEqualToConstraints, coeffNames);
+      ConstraintsGram[] gramEqual = hasEqualityConstraints ? calGram(derivativeEqual) : null;
+      ConstraintsGram[] gramLess = calGram(derivativeLess);
       try {
         while (true) {
           iterCnt++;

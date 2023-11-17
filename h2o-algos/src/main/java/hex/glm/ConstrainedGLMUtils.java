@@ -42,6 +42,25 @@ public class ConstrainedGLMUtils {
     }
   }
   
+  public static class ConstraintsGram extends Iced {
+    public IcedHashMap<CoefIndices, Double> _coefIndicesValue;
+    public boolean _active;
+    
+    public ConstraintsGram() {
+      _coefIndicesValue = new IcedHashMap<>();
+    }
+  }
+  
+  public static class CoefIndices {
+    final int _firstCoefIndex;
+    final int _secondCoefIndex;
+    
+    public CoefIndices(int firstInd, int secondInd) {
+      _firstCoefIndex = firstInd;
+      _secondCoefIndex = secondInd;
+    }
+  }
+  
   public static class ConstraintGLMStates {
     double _ckCS = C0CS;
     double _epsilonkCS = 1.0/C0CS;
