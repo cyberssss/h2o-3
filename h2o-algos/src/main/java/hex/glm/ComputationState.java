@@ -896,12 +896,11 @@ public final class ComputationState {
     ConstrainedGLMUtils.ConstraintsDerivatives constraintDerivative = new ConstrainedGLMUtils.ConstraintsDerivatives();
     constraintDerivative._active = oneConstraints._active;
     IcedHashMap<String, Double> coeffNameValues = oneConstraints._constraints;
-    IcedHashMap<Integer, Double> indexMultiplier = new IcedHashMap<Integer, Double>();
     int index;
     for (String coefName: coeffNameValues.keySet()) {
       index = coeffNames.indexOf(coefName);
       if (index >= 0)
-        indexMultiplier.put(index, coeffNameValues.get(coefName));
+        constraintDerivative._constraintsDerivative.put(index, coeffNameValues.get(coefName));
     }
     return constraintDerivative;
   }

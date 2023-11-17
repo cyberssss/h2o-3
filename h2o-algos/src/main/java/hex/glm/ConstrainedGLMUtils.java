@@ -51,13 +51,29 @@ public class ConstrainedGLMUtils {
     }
   }
   
-  public static class CoefIndices {
+  public static class CoefIndices implements hex.glm.CoefIndices {
     final int _firstCoefIndex;
     final int _secondCoefIndex;
     
     public CoefIndices(int firstInd, int secondInd) {
       _firstCoefIndex = firstInd;
       _secondCoefIndex = secondInd;
+    }
+    
+    @Override
+    public boolean equals(Object o) {
+      if (this == o)
+        return true;
+      else if (o == null)
+        return false;
+      else if (this._firstCoefIndex == ((CoefIndices) o)._firstCoefIndex && 
+              this._secondCoefIndex == ((CoefIndices) o)._secondCoefIndex)
+        return true;
+      return false;
+    }
+    
+    public String toString() {
+      return "first coefficient index: " + _firstCoefIndex + ", second coefficient index " + _secondCoefIndex;
     }
   }
   

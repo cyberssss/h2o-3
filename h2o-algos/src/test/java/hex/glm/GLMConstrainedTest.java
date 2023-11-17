@@ -13,12 +13,18 @@ import water.runner.CloudSize;
 import water.runner.H2ORunner;
 import water.util.IcedHashMap;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static hex.glm.ComputationState.calDerivatives;
+import static hex.glm.ComputationState.calGram;
 import static hex.glm.GLMModel.GLMParameters.Family.gaussian;
 import static hex.glm.GLMModel.GLMParameters.Solver.IRLSM;
+import static org.junit.Assert.assertTrue;
 import static water.fvec.Vec.T_NUM;
 import static water.fvec.Vec.T_STR;
 
@@ -83,7 +89,7 @@ public class GLMConstrainedTest extends TestUtil {
    *  The coefficient list is C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11 with C1 at index 0, C2 at index 1 and ...
    */
   public void generateConstraints() {
-    _coeffsDG = new ArrayList<>(Arrays.asList("C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10", "C11", "C2"));
+    _coeffsDG = new ArrayList<>(Arrays.asList("C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10", "C11", "C12"));
     _equalityConstr = new ConstrainedGLMUtils.LinearConstraints[3];
     _lessThanConstr = new ConstrainedGLMUtils.LinearConstraints[3];
     _equalityConstr[0] = makeOneConstraint(new String[]{"C1", "C3"}, new double[]{1, -0.3});
@@ -121,14 +127,62 @@ public class GLMConstrainedTest extends TestUtil {
    * (0, 0.4), (1, 0.2)
    * (2, 10), (3, -4)
    * (5, -1.5), (6, -2.8)
-   *
    */
   public void generateDerivativeAnswer() {
-
+    _cdEqual = new ConstrainedGLMUtils.ConstraintsDerivatives[3];
+    _cdEqual[0] = genOneCDerivative(new int[]{0, 2}, new double[]{1, -0.3});
+    _cdEqual[1] = genOneCDerivative(new int[]{3, 4}, new double[]{11, -2.4});
+    _cdEqual[2] = genOneCDerivative(new int[]{9,10}, new double[]{-9.3, 1.3});
+    _cdLess = new ConstrainedGLMUtils.ConstraintsDerivatives[3];
+    _cdLess[0] = genOneCDerivative(new int[]{0,1}, new double[]{0.4, 0.2});
+    _cdLess[1] = genOneCDerivative(new int[]{2,3}, new double[]{10, -4});
+    _cdLess[2] =  genOneCDerivative(new int[]{5,6}, new double[]{-1.5, -2.8});
   }
 
-  public void generateGramAnswer() {
 
+  /***
+   * This generates the contribution to the gram from Linear constraints.  
+   * Equality constraints Gram contribution:
+   * ((0,0), 1), ((0,2), -0.3), ((2,2), 0.09)
+   * ((3,3), 121), ((3,4), -26.4), ((4,4), 5.76)
+   * ((9,9), 86.49), ((9,10), 12.09), ((10,10), 1.69)
+   * 
+   * Less than:
+   * ((0,0), 0.16), ((0,1), 0.08), ((1,1), 0.04)
+   * ((2,2),100), ((2,3), -40), ((3,3), 16)
+   * ((5,5), 2.25), ((5,6), 4.2), ((6,6), 7.84)
+   */
+  public void generateGramAnswer() {
+    _cGEqual = new ConstrainedGLMUtils.ConstraintsGram[3];
+    _cGEqual[0] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(0,0),
+            new ConstrainedGLMUtils.CoefIndices(0,2), new ConstrainedGLMUtils.CoefIndices(2,2)}, new double[]{1, -0.3, 0.09});
+    _cGEqual[1] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(3,3),
+            new ConstrainedGLMUtils.CoefIndices(3,4), new ConstrainedGLMUtils.CoefIndices(4,4)}, new double[]{121, -26.4, 5.76});
+    _cGEqual[2] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(9,9),
+            new ConstrainedGLMUtils.CoefIndices(9,10), new ConstrainedGLMUtils.CoefIndices(10,10)}, new double[]{86.49, -12.09, 1.69});
+    _cGLess = new ConstrainedGLMUtils.ConstraintsGram[3];
+    _cGLess[0] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(0,0),
+            new ConstrainedGLMUtils.CoefIndices(0,1), new ConstrainedGLMUtils.CoefIndices(1,1)}, new double[]{0.16,0.08,0.04});
+    _cGLess[1] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(2,2),
+            new ConstrainedGLMUtils.CoefIndices(2,3), new ConstrainedGLMUtils.CoefIndices(3,3)}, new double[]{100,-40,16});
+    _cGLess[2] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(5,5),
+            new ConstrainedGLMUtils.CoefIndices(5,6), new ConstrainedGLMUtils.CoefIndices(6,6)}, new double[]{2.25,4.2,7.84});        
+  }
+  
+  public ConstrainedGLMUtils.ConstraintsGram genOneGram(ConstrainedGLMUtils.CoefIndices[] coefIndices, double[] vals) {
+    ConstrainedGLMUtils.ConstraintsGram oneG = new ConstrainedGLMUtils.ConstraintsGram();
+    int numV = vals.length;
+    for (int index=0; index<numV; index++)
+      oneG._coefIndicesValue.put(coefIndices[index], vals[index]);
+    return oneG;
+  }
+  
+  public ConstrainedGLMUtils.ConstraintsDerivatives genOneCDerivative(int[] indices, double[] vals) {
+    ConstrainedGLMUtils.ConstraintsDerivatives oneD = new ConstrainedGLMUtils.ConstraintsDerivatives();
+    int numItem = indices.length;
+    for (int index=0; index<numItem; index++)
+      oneD._constraintsDerivative.put(indices[index], vals[index]);
+    return oneD;
   }
 
   public void generateConstraint4FrameNAnswer() {
@@ -340,7 +394,68 @@ public class GLMConstrainedTest extends TestUtil {
   public void teardown() {
     Scope.exit();
   }
+
+  @Test
+  public void testConstraintsDerivative() {
+    ConstrainedGLMUtils.ConstraintsDerivatives[] derivativeEqual = calDerivatives(_equalityConstr, _coeffsDG);
+    ConstrainedGLMUtils.ConstraintsDerivatives[] derivativeLess = calDerivatives(_lessThanConstr, _coeffsDG);
+    assertCorrectDerivatives(derivativeEqual, _cdEqual);
+    assertCorrectDerivatives(derivativeLess, _cdLess);
+  }
   
+  public void assertCorrectDerivatives(ConstrainedGLMUtils.ConstraintsDerivatives[] actual, 
+                                       ConstrainedGLMUtils.ConstraintsDerivatives[] expected) {
+    int numV = actual.length;
+    assertTrue("expected array length: " + expected.length + " and actual array length: " + actual.length 
+             + ".  They are different", actual.length == numV);
+    for (int index=0; index<numV; index++) {
+      ConstrainedGLMUtils.ConstraintsDerivatives cd1 = actual[index];
+      ConstrainedGLMUtils.ConstraintsDerivatives cd2 = expected[index];
+      assertTrue("Expected HashMap length: " + cd2._constraintsDerivative.size() + 
+              ". Actual HashMap length: " + cd1._constraintsDerivative.size(), 
+              cd2._constraintsDerivative.size()==cd1._constraintsDerivative.size());
+      assertTrue(cd1._constraintsDerivative.entrySet().stream().allMatch(e -> Math.abs(e.getValue()-cd2._constraintsDerivative.get(e.getKey()))<1e-6));
+    }
+  }
+
+  @Test
+  public void testConstraintsGram() {
+    ConstrainedGLMUtils.ConstraintsGram[] gramEqual = calGram(_cdEqual);
+    ConstrainedGLMUtils.ConstraintsGram[] gramLess = calGram( _cdLess);
+    assertCorrectGrams(gramEqual, _cGEqual);
+    assertCorrectGrams(gramLess, _cGLess);
+  }
+  
+  public void assertCorrectGrams(ConstrainedGLMUtils.ConstraintsGram[] actual, ConstrainedGLMUtils.ConstraintsGram[] expected) {
+    int numV = actual.length;
+    assertTrue("expected array length: " + expected.length + " and actual array length: " + actual.length
+            + ".  They are different", actual.length == numV);
+    for (int index=0; index<numV; index++) {
+      ConstrainedGLMUtils.ConstraintsGram cd1 = actual[index];
+      ConstrainedGLMUtils.ConstraintsGram cd2 = expected[index];
+      assertTrue("Expected HashMap length: " + cd2._coefIndicesValue.size() +
+                      ". Actual HashMap length: " + cd1._coefIndicesValue.size(),
+              cd2._coefIndicesValue.size()==cd1._coefIndicesValue.size());
+      assertCorrectGramMaps(cd2._coefIndicesValue, cd1._coefIndicesValue);
+    }
+  }
+  
+  public void assertCorrectGramMaps(IcedHashMap<ConstrainedGLMUtils.CoefIndices, Double> actual, 
+                                    IcedHashMap<ConstrainedGLMUtils.CoefIndices, Double> expected) {
+    List<CoefIndices> actualKey = actual.keySet().stream().collect(Collectors.toList());
+    List<CoefIndices> expectedKey = expected.keySet().stream().collect(Collectors.toList());
+    int numK = actualKey.size();
+    assertTrue(numK == expectedKey.size());
+
+    for (CoefIndices oneKey : actualKey) {
+      int index = expectedKey.indexOf(oneKey);
+      assertTrue(index >= 0);
+      double expectedValue = expected.get(expectedKey.get(index));
+      assertTrue("Expected value: " + actual.get(oneKey) + ", Actual value: " + expectedValue, 
+              Math.abs(actual.get(oneKey) - expectedValue) < 1e-6);
+    }
+  }
+
   // beta and linear constraints conflict and we should catch it
   @Test
   public void testConflictConstraints() {
@@ -380,7 +495,7 @@ public class GLMConstrainedTest extends TestUtil {
       params._lambda = new double[]{0};
       GLMModel glm2 = new GLM(params).trainModel().get();
       Scope.track_generic(glm2);
-      assert 1==2 : "Should have thrown an error due to duplicated constraints.";
+      assertTrue("Should have thrown an error due to duplicated constraints.", 1==2);
     } catch(IllegalArgumentException ex) {
       assert ex.getMessage().contains("redundant and possibly conflicting linear constraints") : "Wrong error message.  Error should be about" +
               " redundant linear constraints";
@@ -531,9 +646,8 @@ public class GLMConstrainedTest extends TestUtil {
       int numNames = constNames.length;
       for (int index2=0; index2<numNames; index2++) {
         int cNamesIndex = constraintNames.indexOf(constNames[index2]);
-        assert Math.abs(constraintMatrix[rowIndex][cNamesIndex]-constValues[index2]) < EPS : 
-                "Expected value: "+constValues[index2]+" for constraint "+constNames[index2]+" but actual: "
-                        +constraintMatrix[rowIndex][cNamesIndex];
+        assertTrue("Expected value: "+constValues[index2]+" for constraint "+constNames[index2]+" but actual: "
+                +constraintMatrix[rowIndex][cNamesIndex],  Math.abs(constraintMatrix[rowIndex][cNamesIndex]-constValues[index2]) < EPS);
       }
     }
   }
@@ -562,7 +676,7 @@ public class GLMConstrainedTest extends TestUtil {
       String[] coeffNames2 = glm2.coefficients().keySet().toArray(new String[0]);
       
       for (String oneName : coeffNames2)
-        assert coeffNames.contains(oneName);
+        assertTrue(coeffNames.contains(oneName));
     } finally {
       Scope.exit();
     }
@@ -597,12 +711,10 @@ public class GLMConstrainedTest extends TestUtil {
       ConstrainedGLMUtils.LinearConstraints[] equalConstraintstBeta = glm2._output._equalityConstraintsBeta;
       ConstrainedGLMUtils.LinearConstraints[] lessThanEqualToConstraintstBeta = glm2._output._lessThanEqualToConstraintsBeta;
 
-      assert _betaConstraintNames1Equal.length == equalConstraintstBeta.length : 
-              "Expected constraint length: "+ _betaConstraintValStandard1Equal.length+" but" +
-              " actual is "+equalConstraintstBeta.length;
-      assert _betaConstraintNames1Less.length == lessThanEqualToConstraintstBeta.length :
-              "Expected constraint length: "+ _betaConstraintNames1Less.length+" but" +
-                      " actual is "+lessThanEqualToConstraintstBeta.length;
+      assertTrue("Expected constraint length: "+ _betaConstraintValStandard1Equal.length+" but" +
+              " actual is "+equalConstraintstBeta.length,_betaConstraintNames1Equal.length == equalConstraintstBeta.length);
+      assertTrue("Expected constraint length: "+ _betaConstraintNames1Less.length+" but" +
+              " actual is "+lessThanEqualToConstraintstBeta.length,_betaConstraintNames1Less.length == lessThanEqualToConstraintstBeta.length);
       assertCorrectConstraintContent(_betaConstraintNames1Equal, _betaConstraintValStandard1Equal, equalConstraintstBeta);
       assertCorrectConstraintContent(_betaConstraintNames1Less, _betaConstraintValStandard1Less, lessThanEqualToConstraintstBeta);
       
@@ -646,13 +758,14 @@ public class GLMConstrainedTest extends TestUtil {
       GLMModel glm2 = new GLM(params).trainModel().get();
       Scope.track_generic(glm2);
       ConstrainedGLMUtils.LinearConstraints[] fromBetaConstraintE = glm2._output._equalityConstraintsBeta;
-      assert _betaConstraintNames1Equal.length == fromBetaConstraintE.length : "Expected constraint length: "+
-              _betaConstraintNames1Equal.length+" but actual is "+fromBetaConstraintE.length;
+      assertTrue("Expected constraint length: "+
+              _betaConstraintNames1Equal.length+" but actual is "+fromBetaConstraintE.length, 
+              _betaConstraintNames1Equal.length == fromBetaConstraintE.length);
       assertCorrectConstraintContent(_betaConstraintNames1Equal, _betaConstraintVal1Equal, fromBetaConstraintE);
 
       ConstrainedGLMUtils.LinearConstraints[] fromBetaConstraintL = glm2._output._lessThanEqualToConstraintsBeta;
-      assert _betaConstraintNames1Less.length == fromBetaConstraintL.length : "Expected constraint length: "+
-              _betaConstraintNames1Less.length+" but actual is "+fromBetaConstraintL.length;
+      assertTrue("Expected constraint length: "+ _betaConstraintNames1Less.length + " but actual is " + 
+              fromBetaConstraintL.length,  _betaConstraintNames1Less.length == fromBetaConstraintL.length);
       assertCorrectConstraintContent(_betaConstraintNames1Less, _betaConstraintVal1Less, fromBetaConstraintL);
       
       // check constraints from linear constraints are extracted properly
@@ -729,15 +842,9 @@ public class GLMConstrainedTest extends TestUtil {
     }
   }
 
-
-  @Test
-  public void testConstraintsDerivative() {
-    
-  }
-
   public void assertCorrectConstraintContent(String[][] coefNames, double[][] value,
                                              ConstrainedGLMUtils.LinearConstraints[] consts) {
-    assert coefNames.length == consts.length;
+    assertTrue("array length does not match", coefNames.length == consts.length);
     int constLen = consts.length;
     for (int index=0; index<constLen; index++) {
       ConstrainedGLMUtils.LinearConstraints oneConstraint = consts[index];
@@ -745,9 +852,10 @@ public class GLMConstrainedTest extends TestUtil {
       String[] coefName = coefNames[index];
       int entryLen = coefName.length;
       for (int ind = 0; ind < entryLen; ind++) {
-        assert coefKeys.contains(coefName[ind]);
-        assert Math.abs(value[index][ind] - oneConstraint._constraints.get(coefName[ind])) < EPS : "Expected: "+value[index][ind]+
-                ".  Actual: "+oneConstraint._constraints.get(coefName[ind])+" for coefficient: "+coefName[ind]+".";
+        assertTrue(coefKeys.contains(coefName[ind]));
+        assertTrue("Expected: "+value[index][ind]+
+                ".  Actual: "+oneConstraint._constraints.get(coefName[ind])+" for coefficient: "+coefName[ind]+".", 
+                Math.abs(value[index][ind] - oneConstraint._constraints.get(coefName[ind])) < EPS);
       }
     }
   }
