@@ -2299,6 +2299,7 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
       int iterCnt = _checkPointFirstIter ? _state._iter : 0;
       boolean firstIter = iterCnt == 0;
       double objConstraints;
+      // contribution to gradient from transpose(lambda)*constraint vector without lambda values
       ConstraintsDerivatives[] derivativeEqual = hasEqualityConstraints ? calDerivatives(equalityConstraints, coeffNames) : null;
       ConstraintsDerivatives[] derivativeLess = calDerivatives(lessThanEqualToConstraints, coeffNames);
       ConstraintsGram[] gramEqual = hasEqualityConstraints ? calGram(derivativeEqual) : null;

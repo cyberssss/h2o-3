@@ -905,9 +905,9 @@ public final class ComputationState {
     return constraintDerivative;
   }
   
+  // method to calculate contribution of penalty to gram (d2H/dbidbj)
   public static ConstrainedGLMUtils.ConstraintsGram[] calGram(ConstrainedGLMUtils.ConstraintsDerivatives[] derivativeEqual) {
-    ConstrainedGLMUtils.ConstraintsGram[] gramFromConstraints = Arrays.stream(derivativeEqual).map(x -> constructGram(x)).toArray(ConstrainedGLMUtils.ConstraintsGram[]::new);
-    return gramFromConstraints;
+    return Arrays.stream(derivativeEqual).map(x -> constructGram(x)).toArray(ConstrainedGLMUtils.ConstraintsGram[]::new);
   }
   
   public static ConstrainedGLMUtils.ConstraintsGram constructGram(ConstrainedGLMUtils.ConstraintsDerivatives constDeriv) {
