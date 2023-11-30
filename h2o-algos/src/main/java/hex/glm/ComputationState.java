@@ -25,10 +25,12 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import static hex.glm.ConstrainedGLMUtils.LinearConstraints;
+import static hex.glm.ConstrainedGLMUtils.*;
 import static hex.glm.GLMModel.GLMParameters.Family.gaussian;
 import static hex.glm.GLMUtils.calSmoothNess;
 import static hex.glm.GLMUtils.copyGInfo;
+import static water.util.ArrayUtils.mult;
+import static water.util.ArrayUtils.sum;
 
 public final class ComputationState {
   final boolean _intercept;
@@ -1016,6 +1018,22 @@ public final class ComputationState {
     else 
       return expandToFullArray(beta, _activeData.activeCols(), _totalBetaLength, _nbetas, _betaLengthPerClass);
   }
+  
+  public static class GramGrad {
+    public final double[][] _gram;
+    public final double[] beta;
+    public final double[] _grad;
+    public final double likelihood;
+    public double _sumOfRowWeights;
+    
+    public GramGrad(double[][] gramM, double[] grad, double[] b, double llh, double sumOfRowWeights) {
+      _gram = gramM;
+      beta = b;
+      _grad = grad;
+      likelihood = llh;
+      _sumOfRowWeights = sumOfRowWeights;
+    }
+  }
 
   /**
    * Cached state of COD (with covariate updates) solver.
@@ -1115,7 +1133,7 @@ public final class ComputationState {
         }
         gt._gram.addGAMPenalty(activeCols , _penaltyMatrix, _gamBetaIndices);
     }
-    ArrayUtils.mult(gt._xy,obj_reg);
+    mult(gt._xy,obj_reg);
     int [] activeCols = activeData.activeCols();
     int [] zeros = gt._gram.findZeroCols();
     GramXY res;
@@ -1144,25 +1162,28 @@ public final class ComputationState {
       return computeNewGram(_activeData, ArrayUtils.select(beta, _activeData.activeCols()), s);
   }
 
-  protected GramXY computeGram(double [] beta, double[] lambdaE, double[] lambdaL){
+  protected GramGrad computeGram(double [] beta, double[] lambdaE, double[] lambdaL, ConstraintsDerivatives[] equalD,
+                               ConstraintsDerivatives[] lessD, double[][] equalGCntri, ConstraintsGram[] lessG){
     DataInfo activeData = activeData();
     double obj_reg = _parms._obj_reg;
     if(_glmw == null) _glmw = new GLMModel.GLMWeightsFun(_parms);
     GLMTask.GLMIterationTask gt = new GLMTask.GLMIterationTask(_job._key, activeData, _glmw, beta,
             _activeClass, _hasConstraints).doAll(activeData._adaptedFrame);
-    gt._gram.mul(obj_reg);
+    double[][] fullGram = gt._gram.getXX(); // only extract gram matrix
+    if (equalGCntri != null)                // add gram contribution from constraints
+      sum(fullGram, mult(equalGCntri, _csGLMState._ckCS));
+    sum(fullGram, mult(sumGramConstribution(lessG, fullGram.length), _csGLMState._ckCS));
+    mult(fullGram, obj_reg);
     if (_parms._glmType.equals(GLMParameters.GLMType.gam)) { // add contribution from GAM smoothness factor
-      Integer[] activeCols=null;
-      int[] activeColumns = activeData.activeCols();
-      if (activeColumns.length<_dinfo.fullN()) { // columns are deleted
-        activeCols = ArrayUtils.toIntegers(activeColumns, 0, activeColumns.length);
-      }
-      gt._gram.addGAMPenalty(activeCols , _penaltyMatrix, _gamBetaIndices);
+      gt._gram.addGAMPenalty(_penaltyMatrix, _gamBetaIndices, fullGram);
     }
-    ArrayUtils.mult(gt._xy,obj_reg);
+    // calculate gradients and form xy which is (Gram*beta_current + gradient)
+    
+    mult(gt._xy,obj_reg);
     int [] activeCols = activeData.activeCols();
     int [] zeros = gt._gram.findZeroCols();
     GramXY res;
+    GramGrad gramGrad = null;
     if(_parms._family != Family.multinomial && zeros.length > 0 && zeros.length <= activeData.activeCols().length) {
       gt._gram.dropCols(zeros);
       removeCols(zeros);
@@ -1172,7 +1193,7 @@ public final class ComputationState {
     } else res = new GramXY(gt._gram,gt._xy,null, beta,activeCols,null,gt._yy,gt._likelihood);
     if (gaussian.equals(_parms._family))
       res.sumOfRowWeights = gt.sumOfRowWeights;
-    return res;
+    return gramGrad;
   }
 
   // get cached gram or incrementally update or compute new one
@@ -1214,8 +1235,8 @@ public final class ComputationState {
       if(!weighted || matches) {
         GLMTask.GLMIncrementalGramTask gt = new GLMTask.GLMIncrementalGramTask(newColsIds, activeData, _glmw, beta).doAll(activeData._adaptedFrame); // dense
         for (double[] d : gt._gram)
-          ArrayUtils.mult(d, obj_reg);
-        ArrayUtils.mult(gt._xy, obj_reg);
+          mult(d, obj_reg);
+        mult(gt._xy, obj_reg);
         // glue the update and old gram together
         return _currGram = GramXY.addCols(beta, activeCols, newColsIds, _currGram, gt._gram, gt._xy);
       }

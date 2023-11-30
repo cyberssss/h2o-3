@@ -22,6 +22,7 @@ import java.util.stream.Stream;
 
 import static hex.glm.ComputationState.calDerivatives;
 import static hex.glm.ComputationState.calGram;
+import static hex.glm.ConstrainedGLMUtils.sumGramConstribution;
 import static hex.glm.GLMModel.GLMParameters.Family.gaussian;
 import static hex.glm.GLMModel.GLMParameters.Solver.IRLSM;
 import static org.junit.Assert.assertTrue;
@@ -65,6 +66,8 @@ public class GLMConstrainedTest extends TestUtil {
   ConstrainedGLMUtils.ConstraintsGram[] _cGEqual;
   ConstrainedGLMUtils.ConstraintsGram[] _cGLess;
   List<String> _coeffsDG;
+  double[][] _equalGramContr;
+  double[][] _lessGramContr;
   
   
   @Before
@@ -153,20 +156,47 @@ public class GLMConstrainedTest extends TestUtil {
    * ((5,5), 2.25), ((5,6), 4.2), ((6,6), 7.84)
    */
   public void generateGramAnswer() {
+    int coefSize = _coeffNames1.size()+1;
+    _equalGramContr = new double[coefSize][coefSize];
+    _lessGramContr = new double[coefSize][coefSize];
     _cGEqual = new ConstrainedGLMUtils.ConstraintsGram[3];
     _cGEqual[0] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(0,0),
             new ConstrainedGLMUtils.CoefIndices(0,2), new ConstrainedGLMUtils.CoefIndices(2,2)}, new double[]{1, -0.3, 0.09});
+    _equalGramContr[0][0] += 1;
+    _equalGramContr[0][2] += -0.3;
+    _equalGramContr[2][0] += -0.3;
+    _equalGramContr[2][2] += 0.09;
     _cGEqual[1] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(3,3),
             new ConstrainedGLMUtils.CoefIndices(3,4), new ConstrainedGLMUtils.CoefIndices(4,4)}, new double[]{121, -26.4, 5.76});
+    _equalGramContr[3][3] += 121;
+    _equalGramContr[3][4] += -26.4;
+    _equalGramContr[4][3] += -26.4;
+    _equalGramContr[4][4] += 5.76;
     _cGEqual[2] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(9,9),
             new ConstrainedGLMUtils.CoefIndices(9,10), new ConstrainedGLMUtils.CoefIndices(10,10)}, new double[]{86.49, -12.09, 1.69});
+    _equalGramContr[9][9] += 86.49;
+    _equalGramContr[9][10] += -12.09;
+    _equalGramContr[10][9] += -12.09;
+    _equalGramContr[10][10] += 1.69;
     _cGLess = new ConstrainedGLMUtils.ConstraintsGram[3];
     _cGLess[0] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(0,0),
             new ConstrainedGLMUtils.CoefIndices(0,1), new ConstrainedGLMUtils.CoefIndices(1,1)}, new double[]{0.16,0.08,0.04});
+    _lessGramContr[0][0] += 0.16;
+    _lessGramContr[0][1] += 0.08;
+    _lessGramContr[1][0] += 0.08;
+    _lessGramContr[1][1] += 0.04;
     _cGLess[1] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(2,2),
             new ConstrainedGLMUtils.CoefIndices(2,3), new ConstrainedGLMUtils.CoefIndices(3,3)}, new double[]{100,-40,16});
+    _lessGramContr[2][2] += 100;
+    _lessGramContr[2][3] += -40;
+    _lessGramContr[3][2] += -40;
+    _lessGramContr[3][3] += 16;
     _cGLess[2] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(5,5),
-            new ConstrainedGLMUtils.CoefIndices(5,6), new ConstrainedGLMUtils.CoefIndices(6,6)}, new double[]{2.25,4.2,7.84});        
+            new ConstrainedGLMUtils.CoefIndices(5,6), new ConstrainedGLMUtils.CoefIndices(6,6)}, new double[]{2.25,4.2,7.84});
+    _lessGramContr[5][5] += 2.25;
+    _lessGramContr[5][6] += 4.2;
+    _lessGramContr[6][5] += 4.2;
+    _lessGramContr[6][6] += 7.84;
   }
   
   public ConstrainedGLMUtils.ConstraintsGram genOneGram(ConstrainedGLMUtils.CoefIndices[] coefIndices, double[] vals) {
@@ -174,6 +204,7 @@ public class GLMConstrainedTest extends TestUtil {
     int numV = vals.length;
     for (int index=0; index<numV; index++)
       oneG._coefIndicesValue.put(coefIndices[index], vals[index]);
+    oneG._active = true;
     return oneG;
   }
   
@@ -182,6 +213,7 @@ public class GLMConstrainedTest extends TestUtil {
     int numItem = indices.length;
     for (int index=0; index<numItem; index++)
       oneD._constraintsDerivative.put(indices[index], vals[index]);
+    oneD._active = true;
     return oneD;
   }
 
@@ -416,6 +448,14 @@ public class GLMConstrainedTest extends TestUtil {
               cd2._constraintsDerivative.size()==cd1._constraintsDerivative.size());
       assertTrue(cd1._constraintsDerivative.entrySet().stream().allMatch(e -> Math.abs(e.getValue()-cd2._constraintsDerivative.get(e.getKey()))<1e-6));
     }
+  }
+  
+  @Test
+  public void testGramConstraintsSum() {
+    double[][] equalGramC = sumGramConstribution(_cGEqual, _coeffNames1.size()+1);
+    double[][] lessGramC = sumGramConstribution(_cGLess, _coeffNames1.size()+1);
+    checkDoubleArrays(equalGramC, _equalGramContr, 1e-6);
+    checkDoubleArrays(lessGramC, _lessGramContr, 1e-6);
   }
 
   @Test

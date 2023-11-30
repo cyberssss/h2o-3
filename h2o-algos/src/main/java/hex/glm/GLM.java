@@ -1657,7 +1657,7 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
     private transient Cholesky _chol;
     private transient L1Solver _lslvr;
 
-    private double[] constraintGLM_solve(Gram gram, double[] xy) {
+    private double[] constraintGLM_solve(GramGrad  gram, double[] xy) {
       if (!_parms._intercept) throw H2O.unimpl();
       return xy;
     }
@@ -2302,13 +2302,16 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
       // contribution to gradient from transpose(lambda)*constraint vector without lambda values
       ConstraintsDerivatives[] derivativeEqual = hasEqualityConstraints ? calDerivatives(equalityConstraints, coeffNames) : null;
       ConstraintsDerivatives[] derivativeLess = calDerivatives(lessThanEqualToConstraints, coeffNames);
+      // contribution to hessian from ||h(beta)||^2 without C
       ConstraintsGram[] gramEqual = hasEqualityConstraints ? calGram(derivativeEqual) : null;
+      double[][] gramEqualContributions = hasEqualityConstraints ? sumGramConstribution(gramEqual, betaCnd.length) : null;
       ConstraintsGram[] gramLess = calGram(derivativeLess);
       try {
         while (true) {
           iterCnt++;
           long t1 = System.currentTimeMillis();
-          ComputationState.GramXY gram = _state.computeGram(betaCnd, s);  // solve for beta with constraints
+          ComputationState.GramGrad gram = _state.computeGram(betaCnd, lambdaEqual, lambdaLessThan, derivativeEqual, 
+                  derivativeLess, gramEqualContributions, gramLess);  // only calculate gram with constraint contributions
           // solve for new lambdas, cks, and other variables
           long t2 = System.currentTimeMillis();
           if (!_state._lsNeeded && (Double.isNaN(gram.likelihood) || _state.objective(gram.beta, gram.likelihood) >
@@ -2320,8 +2323,8 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
               _model._betaCndCheckpoint = betaCnd;
               return;
             }
-            if (!_checkPointFirstIter)
-              betaCnd = constraintGLM_solve(gram.gram, gram.xy); // this will shrink betaCnd if needed but this call may be skipped
+/*            if (!_checkPointFirstIter)
+              betaCnd = constraintGLM_solve(gram.gram, gram.xy); // this will shrink betaCnd if needed but this call may be skipped*/
           }
           firstIter = false;
           _checkPointFirstIter = false;

@@ -45,6 +45,17 @@ public class ArrayUtils {
     for( int d : from ) result += d;
     return result;
   }
+  
+  public static void sum(double[][] a, double[][] b) {
+    int arrSize = a.length;
+    for (int index=0; index<arrSize; index++) {
+      a[index][index] += b[index][index];
+      for (int index2 = index+1; index2 < arrSize; index2++) {
+        a[index][index2] += b[index][index2];
+        a[index2][index] = a[index][index2];
+      }
+    }
+  }
 
   public static float sum(final float[] from) {
     float result = 0;

@@ -466,8 +466,38 @@ public class ConstrainedGLMUtils {
 
   public static void genInitialLambda(Random randObj, LinearConstraints[] constraints, double[] lambda) {
     int numC = constraints.length;
+    LinearConstraints oneC;
     for (int index=0; index<numC; index++) {
-      lambda[index] = randObj.nextGaussian();
+      oneC = constraints[index];
+      lambda[index] = Math.abs(randObj.nextGaussian());
+      if (oneC._active & oneC._constraintsVal < 0) {
+          lambda[index] *= -1;  // switch sign of lambda_index such that constraint_index*lambda_index is positive
+      }
     }
+  }
+  
+  
+  public static double[][] sumGramConstribution(ConstraintsGram[] gramEqual, int numCoefs) {
+    if (gramEqual == null)
+      return null;
+    double[][] gramContr = new double[numCoefs][numCoefs];  // includes intercept terms
+    int cGramSize = gramEqual.length;
+    ConstraintsGram oneGram;
+    int numMap;
+    int coef1, coef2;
+    for (int index=0; index < cGramSize; index++) {
+      oneGram = gramEqual[index];
+      numMap = oneGram._coefIndicesValue.size();
+      if (oneGram._active) {  // only process the contribution if the constraint is active
+        for (CoefIndices key : oneGram._coefIndicesValue.keySet()) {
+          coef1 = key._firstCoefIndex;
+          coef2 = key._secondCoefIndex;
+          gramContr[coef1][coef2] += oneGram._coefIndicesValue.get(key);
+          if (coef1 != coef2)
+            gramContr[coef2][coef1] = gramContr[coef1][coef2];
+        }
+      }
+    }
+    return gramContr;
   }
 }
