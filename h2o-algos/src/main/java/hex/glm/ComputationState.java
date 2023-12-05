@@ -1170,10 +1170,10 @@ public final class ComputationState {
     GLMTask.GLMIterationTask gt = new GLMTask.GLMIterationTask(_job._key, activeData, _glmw, beta,
             _activeClass, _hasConstraints).doAll(activeData._adaptedFrame);
     double[][] fullGram = gt._gram.getXX(); // only extract gram matrix
+    mult(fullGram, obj_reg);
     if (equalGCntri != null)                // add gram contribution from constraints
       sum(fullGram, mult(equalGCntri, _csGLMState._ckCS));
     sum(fullGram, mult(sumGramConstribution(lessG, fullGram.length), _csGLMState._ckCS));
-    mult(fullGram, obj_reg);
     if (_parms._glmType.equals(GLMParameters.GLMType.gam)) { // add contribution from GAM smoothness factor
       gt._gram.addGAMPenalty(_penaltyMatrix, _gamBetaIndices, fullGram);
     }
