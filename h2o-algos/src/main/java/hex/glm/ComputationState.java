@@ -10,6 +10,10 @@ import hex.gram.Gram;
 import hex.optimization.ADMM;
 import hex.optimization.OptimizationUtils.GradientInfo;
 import hex.optimization.OptimizationUtils.GradientSolver;
+import jsr166y.ForkJoinTask;
+import jsr166y.RecursiveAction;
+import water.H2O;
+import water.H2ORuntime;
 import water.Job;
 import water.MemoryManager;
 import water.fvec.Frame;
@@ -29,10 +33,11 @@ import static hex.glm.ConstrainedGLMUtils.*;
 import static hex.glm.GLMModel.GLMParameters.Family.gaussian;
 import static hex.glm.GLMUtils.calSmoothNess;
 import static hex.glm.GLMUtils.copyGInfo;
-import static water.util.ArrayUtils.mult;
-import static water.util.ArrayUtils.sum;
+import static water.util.ArrayUtils.*;
 
 public final class ComputationState {
+  private static final double R2_EPS = 1e-7;
+  private static final int MIN_PAR = 1000;
   final boolean _intercept;
   final int _nbetas;
   private final GLMParameters _parms;
@@ -80,7 +85,7 @@ public final class ComputationState {
   public boolean _noReg;
   public boolean _hasConstraints;
   ConstrainedGLMUtils.ConstraintGLMStates _csGLMState;
-
+  
   public ComputationState(Job job, GLMParameters parms, DataInfo dinfo, BetaConstraint bc, GLM.BetaInfo bi){
     _job = job;
     _parms = parms;
@@ -1023,15 +1028,176 @@ public final class ComputationState {
     public final double[][] _gram;
     public final double[] beta;
     public final double[] _grad;
-    public final double likelihood;
+    public final double objective;
     public double _sumOfRowWeights;
+    public final double[] _xy;
     
-    public GramGrad(double[][] gramM, double[] grad, double[] b, double llh, double sumOfRowWeights) {
+    public GramGrad(double[][] gramM, double[] grad, double[] b, double obj, double sumOfRowWeights, double[] xy) {
       _gram = gramM;
       beta = b;
       _grad = grad;
-      likelihood = llh;
+      objective = obj;
       _sumOfRowWeights = sumOfRowWeights;
+      _xy = xy;
+    }
+
+    public Gram.Cholesky cholesky(Gram.Cholesky chol, double[][] xx) {
+      if( chol == null ) {
+        for( int i = 0; i < xx.length; ++i )
+          xx[i] = xx[i].clone();
+        chol = new Gram.Cholesky(xx, new double[0]);
+      }
+      final Gram.Cholesky fchol = chol;
+      final int sparseN = 0;
+      final int denseN = xx.length - sparseN;
+      // compute the cholesky of the diagonal and diagonal*dense parts
+      ForkJoinTask [] fjts = new ForkJoinTask[denseN];
+      // compute the outer product of diagonal*dense
+      //Log.info("SPARSEN = " + sparseN + "    DENSEN = " + denseN);
+      final int[][] nz = new int[denseN][];
+      for( int i = 0; i < denseN; ++i ) {
+        final int fi = i;
+        fjts[i] = new RecursiveAction() {
+          @Override protected void compute() {
+            int[] tmp = new int[sparseN];
+            double[] rowi = fchol._xx[fi];
+            int n = 0;
+            for( int k = 0; k < sparseN; ++k )
+              if (rowi[k] != .0) tmp[n++] = k;
+            nz[fi] = Arrays.copyOf(tmp, n);
+          }
+        };
+      }
+      ForkJoinTask.invokeAll(fjts);
+      for( int i = 0; i < denseN; ++i ) {
+        final int fi = i;
+        fjts[i] = new RecursiveAction() {
+          @Override protected void compute() {
+            double[] rowi = fchol._xx[fi];
+            int[]    nzi  = nz[fi];
+            for( int j = 0; j <= fi; ++j ) {
+              double[] rowj = fchol._xx[j];
+              int[]    nzj  = nz[j];
+              double s = 0;
+              for (int t=0,z=0; t < nzi.length && z < nzj.length; ) {
+                int k1 = nzi[t];
+                int k2 = nzj[z];
+                if (k1 < k2) { t++; continue; }
+                else if (k1 > k2) { z++; continue; }
+                else {
+                  s += rowi[k1] * rowj[k1];
+                  t++; z++;
+                }
+              }
+              rowi[j + sparseN] = xx[fi][j + sparseN] - s;
+            }
+          }
+        };
+      }
+      ForkJoinTask.invokeAll(fjts);
+      // compute the cholesky of dense*dense-outer_product(diagonal*dense)
+      double[][] arr = new double[denseN][];
+      for( int i = 0; i < arr.length; ++i )
+        arr[i] = Arrays.copyOfRange(fchol._xx[i], sparseN, sparseN + denseN);
+      final int p = H2ORuntime.availableProcessors();
+      Gram.InPlaceCholesky d = Gram.InPlaceCholesky.decompose_2(arr, 10, p);
+      fchol.setSPD(d.isSPD());
+      arr = d.getL();
+      for( int i = 0; i < arr.length; ++i ) {
+        // See PUBDEV-5585: we use a manual array copy instead of System.arraycopy because of behavior on Java 10
+        // Used to be: System.arraycopy(arr[i], 0, fchol._xx[i], sparseN, i + 1);
+        for (int j = 0; j < i + 1; j++)
+          fchol._xx[i][sparseN + j] = arr[i][j];
+      }
+
+      return chol;
+    }
+
+    public Gram.Cholesky qrCholesky(double[][] Z, boolean standardized) {
+      final double [][] R = new double[Z.length][];
+      final double [] Zdiag = new double[Z.length];
+      final double [] ZdiagInv = new double[Z.length];
+      for(int i = 0; i < Z.length; ++i)
+        ZdiagInv[i] = 1.0/(Zdiag[i] = Z[i][i]);
+      for(int j = 0; j < Z.length; ++j) {
+        final double [] gamma = R[j] = new double[j+1];
+        for(int l = 0; l <= j; ++l) // compute gamma_l_j
+          gamma[l] = Z[j][l]*ZdiagInv[l];
+        double zjj = Z[j][j];
+        for(int k = 0; k < j; ++k) // only need the diagonal, the rest is 0 (dot product of orthogonal vectors)
+          zjj += gamma[k] * (gamma[k] * Z[k][k] - 2*Z[j][k]);
+        // Check R^2 for the current column and ignore if too high (1-R^2 too low), R^2 = 1- rs_res/rs_tot
+        // rs_res = zjj (the squared residual)
+        // rs_tot = sum((yi - mean(y))^2) = mean(y^2) - mean(y)^2,
+        //   mean(y^2) is on diagonal
+        //   mean(y) is in the intercept (0 if standardized)
+        //   might not be regularized with number of observations, that's why dividing by intercept diagonal
+        double rs_tot = standardized
+                ?ZdiagInv[j]
+                :1.0/(Zdiag[j]-Z[j][0]*ZdiagInv[0]*Z[j][0]);
+          ZdiagInv[j] = 1./zjj;
+        Z[j][j] = zjj;
+        int jchunk = Math.max(1,MIN_PAR/(Z.length-j));
+        int nchunks = (Z.length - j - 1)/jchunk;
+        nchunks = Math.min(nchunks, H2O.NUMCPUS);
+        if(nchunks <= 1) { // single trheaded update
+          updateZ(gamma,Z,j);
+        } else { // multi-threaded update
+          final int fjchunk = (Z.length - 1 - j)/nchunks;
+          int rem = Z.length - 1 - j - fjchunk*nchunks;
+          for(int i = Z.length-rem; i < Z.length; ++i)
+            updateZij(i,j,Z,gamma);
+          RecursiveAction[] ras = new RecursiveAction[nchunks];
+          final int fj = j;
+          int k = 0;
+          for (int i = j + 1; i < Z.length-rem; i += fjchunk) { // update xj to zj //
+            final int fi = i;
+            ras[k++] = new RecursiveAction() {
+              @Override
+              protected final void compute() {
+                int max_i = Math.min(fi+fjchunk,Z.length);
+                for(int i = fi; i < max_i; ++i)
+                  updateZij(i,fj,Z,gamma);
+              }
+            };
+          }
+          ForkJoinTask.invokeAll(ras);
+        }
+      }
+      // update the R - we computed Rt/sqrt(diag(Z)) which we can directly use to solve the problem
+      if(R.length < 500)
+        for(int i = 0; i < R.length; ++i)
+          for (int j = 0; j <= i; ++j)
+            R[i][j] *= Math.sqrt(Z[j][j]);
+      else {
+        RecursiveAction [] ras = new RecursiveAction[R.length];
+        for(int i = 0; i < ras.length; ++i) {
+          final int fi = i;
+          final double [] Rrow = R[i];
+          ras[i] = new RecursiveAction() {
+            @Override
+            protected void compute() {
+              for (int j = 0; j <= fi; ++j)
+                Rrow[j] *= Math.sqrt(Z[j][j]);
+            }
+          };
+        }
+        ForkJoinTask.invokeAll(ras);
+      }
+      // add redundant column detection and throws an error if the dropped column is part of any constraints.
+      return new Gram.Cholesky(R,new double[0], true);
+    }
+
+    private final void updateZij(int i, int j, double [][] Z, double [] gamma) {
+      double [] Zi = Z[i];
+      double Zij = Zi[j];
+      for (int k = 0; k < j; ++k)
+        Zij -= gamma[k] * Zi[k];
+      Zi[j] = Zij;
+    }
+    private final void updateZ(final double [] gamma, final double [][] Z, int j){
+      for (int i = j + 1; i < Z.length; ++i)  // update xj to zj //
+        updateZij(i,j,Z,gamma);
     }
   }
 
@@ -1163,7 +1329,8 @@ public final class ComputationState {
   }
 
   protected GramGrad computeGram(double [] beta, double[] lambdaE, double[] lambdaL, ConstraintsDerivatives[] equalD,
-                               ConstraintsDerivatives[] lessD, double[][] equalGCntri, ConstraintsGram[] lessG){
+                                 ConstraintsDerivatives[] lessD, double[][] equalGCntri, ConstraintsGram[] lessG,
+                                 GLMGradientSolver ginfo, LinearConstraints[] constraintD, LinearConstraints[] constraintL){
     DataInfo activeData = activeData();
     double obj_reg = _parms._obj_reg;
     if(_glmw == null) _glmw = new GLMModel.GLMWeightsFun(_parms);
@@ -1177,23 +1344,41 @@ public final class ComputationState {
     if (_parms._glmType.equals(GLMParameters.GLMType.gam)) { // add contribution from GAM smoothness factor
       gt._gram.addGAMPenalty(_penaltyMatrix, _gamBetaIndices, fullGram);
     }
-    // calculate gradients and form xy which is (Gram*beta_current + gradient)
-    
-    mult(gt._xy,obj_reg);
-    int [] activeCols = activeData.activeCols();
-    int [] zeros = gt._gram.findZeroCols();
-    GramXY res;
-    GramGrad gramGrad = null;
-    if(_parms._family != Family.multinomial && zeros.length > 0 && zeros.length <= activeData.activeCols().length) {
-      gt._gram.dropCols(zeros);
-      removeCols(zeros);
-      res = new ComputationState.GramXY(gt._gram,ArrayUtils.removeIds(gt._xy, zeros),null,
-              gt._beta == null?null:ArrayUtils.removeIds(gt._beta, zeros),activeData().activeCols(),null,
-              gt._yy,gt._likelihood);
-    } else res = new GramXY(gt._gram,gt._xy,null, beta,activeCols,null,gt._yy,gt._likelihood);
-    if (gaussian.equals(_parms._family))
-      res.sumOfRowWeights = gt.sumOfRowWeights;
-    return gramGrad;
+    // calculate gradients
+    GLMGradientInfo gradientInfo = ginfo.getGradient(beta); // gradient without constraints
+    // add gradient contribution from constraints
+    if (equalD != null)
+      addConstraintGradient(lambdaE, equalD, gradientInfo);
+    addConstraintGradient(lambdaL, lessD, gradientInfo);
+    if (equalD != null)
+      addPenaltyGradient(equalD, constraintD, gradientInfo, _csGLMState._ckCS);
+    addPenaltyGradient(lessD, constraintL, gradientInfo, _csGLMState._ckCS);
+    // form xy which is (Gram*beta_current + gradient)
+    double[] xy = formXY(fullGram, beta, gradientInfo._gradient);
+    // add contributions from constraints to objective
+    if (constraintD != null)
+      addConstraintObj(lambdaE, constraintD, _csGLMState._ckCS, gradientInfo);
+    addConstraintObj(lambdaL, constraintL, _csGLMState._ckCS, gradientInfo);
+    // remove zeros in Gram matrix and throw an error if that coefficient is included in the constraint
+    return new GramGrad(fullGram, gradientInfo._gradient, beta, gradientInfo._objVal, gt.sumOfRowWeights, xy);
+  }
+  
+  public static void addConstraintObj(double[] lambda, LinearConstraints[] constraints, double ck, GLMGradientInfo ginfo) {
+    int numConstraints = constraints.length;
+    LinearConstraints oneC;
+    for (int index=0; index<numConstraints; index++) {
+      oneC = constraints[index];
+      if (oneC._active) {
+        ginfo._objVal += lambda[index]*oneC._constraintsVal;               // from linear constraints
+        ginfo._objVal += ck*0.5*oneC._constraintsVal*oneC._constraintsVal; // from penalty
+      }
+    }
+  }
+  
+  public static double[] formXY(double[][] fullGram, double[] beta, double[] grad) {
+    double[] xy = new double[grad.length];
+    multArrVec(fullGram, beta, xy);
+    return add(xy, grad);
   }
 
   // get cached gram or incrementally update or compute new one

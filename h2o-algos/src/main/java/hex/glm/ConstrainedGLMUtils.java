@@ -487,7 +487,6 @@ public class ConstrainedGLMUtils {
     int coef1, coef2;
     for (int index=0; index < cGramSize; index++) {
       oneGram = gramEqual[index];
-      numMap = oneGram._coefIndicesValue.size();
       if (oneGram._active) {  // only process the contribution if the constraint is active
         for (CoefIndices key : oneGram._coefIndicesValue.keySet()) {
           coef1 = key._firstCoefIndex;
@@ -499,5 +498,36 @@ public class ConstrainedGLMUtils {
       }
     }
     return gramContr;
+  }
+  
+  public static void addConstraintGradient(double[] lambda, ConstraintsDerivatives[] constraintD, 
+                                           GLM.GLMGradientInfo gradientInfo) {
+    int numConstraints = lambda.length;
+    ConstraintsDerivatives oneC;
+    for (int index=0; index<numConstraints; index++) {
+      oneC = constraintD[index];
+      if (oneC._active) {
+        for (Integer key: oneC._constraintsDerivative.keySet()) {
+          gradientInfo._gradient[key] += lambda[index]*oneC._constraintsDerivative.get(key);
+        }
+      }
+    }
+  }
+
+  public static void addPenaltyGradient(ConstraintsDerivatives[] constraintDeriv, LinearConstraints[] constraintD, 
+                                        GLM.GLMGradientInfo gradientInfo, double ck) {
+    int numConstraints = constraintDeriv.length;
+    ConstraintsDerivatives oneD;
+    LinearConstraints oneConts;
+    int[] coeffKeys;
+    for (int index=0; index<numConstraints; index++) {
+      oneD = constraintDeriv[index];
+      if (oneD._active) {
+        oneConts = constraintD[index];
+        for (Integer coefK : oneD._constraintsDerivative.keySet()) {
+          gradientInfo._gradient[coefK] += ck*oneConts._constraintsVal*oneD._constraintsDerivative.get(coefK);
+        }
+      }
+    }
   }
 }

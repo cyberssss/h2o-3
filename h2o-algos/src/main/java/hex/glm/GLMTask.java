@@ -1669,7 +1669,6 @@ public abstract class GLMTask  {
       return ArrayUtils.hasNaNsOrInfs(_xy) || _gram.hasNaNsOrInfs();
     }
   }
-  
 
  /* public static class GLMCoordinateDescentTask extends FrameTask2<GLMCoordinateDescentTask> {
     final GLMParameters _params;

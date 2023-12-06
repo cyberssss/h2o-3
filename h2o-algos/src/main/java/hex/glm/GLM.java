@@ -1657,8 +1657,24 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
     private transient Cholesky _chol;
     private transient L1Solver _lslvr;
 
-    private double[] constraintGLM_solve(GramGrad  gram, double[] xy) {
+    private double[] constraintGLM_solve(GramGrad  gram) {
       if (!_parms._intercept) throw H2O.unimpl();
+      ArrayList<Integer> ignoredCols = new ArrayList<>();
+      double[] xy = gram._xy.clone();
+      Cholesky chol = ((_state._iter == 0) ? gram.qrCholesky(gram._gram, _parms._standardize) : gram.cholesky(null, gram._gram));
+      if (!ignoredCols.isEmpty() && !_parms._remove_collinear_columns) {
+        int[] collinear_cols = new int[ignoredCols.size()];
+        for (int i = 0; i < collinear_cols.length; ++i)
+          collinear_cols[i] = ignoredCols.get(i);
+        throw new Gram.CollinearColumnsException("Found collinear columns in the dataset. P-values can not be " +
+                "computed with collinear columns in the dataset. Set remove_collinear_columns flag to true to remove " +
+                "collinear columns automatically. Found collinear columns " +
+                Arrays.toString(ArrayUtils.select(_dinfo.coefNames(), collinear_cols)));
+      }
+      if (!chol.isSPD()) throw new NonSPDMatrixException();
+      _chol = chol;
+      xy = xy.clone();
+      chol.solve(xy);
       return xy;
     }
     
@@ -2306,25 +2322,29 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
       ConstraintsGram[] gramEqual = hasEqualityConstraints ? calGram(derivativeEqual) : null;
       double[][] gramEqualContributions = hasEqualityConstraints ? sumGramConstribution(gramEqual, betaCnd.length) : null;
       ConstraintsGram[] gramLess = calGram(derivativeLess);
+      GLMGradientSolver ginfo = gam.equals(_parms._glmType) ? new GLMGradientSolver(_job, _parms, _dinfo, 0,
+              _state.activeBC(), _betaInfo, _penaltyMatrix, _gamColIndices) : new GLMGradientSolver(_job, _parms, 
+              _dinfo, 0, _state.activeBC(), _betaInfo);
       try {
         while (true) {
           iterCnt++;
           long t1 = System.currentTimeMillis();
           ComputationState.GramGrad gram = _state.computeGram(betaCnd, lambdaEqual, lambdaLessThan, derivativeEqual, 
-                  derivativeLess, gramEqualContributions, gramLess);  // only calculate gram with constraint contributions
+                  derivativeLess, gramEqualContributions, gramLess, ginfo, equalityConstraints, 
+                  lessThanEqualToConstraints);  // only calculate gram with constraint contributions
           // solve for new lambdas, cks, and other variables
           long t2 = System.currentTimeMillis();
-          if (!_state._lsNeeded && (Double.isNaN(gram.likelihood) || _state.objective(gram.beta, gram.likelihood) >
+          if (!_state._lsNeeded && (Double.isNaN(gram.objective) || _state.objective(gram.beta, gram.objective) >
                   _state.objective() + _parms._objective_epsilon) && !_checkPointFirstIter) {
             _state._lsNeeded = true;
           } else {
-            if (!firstIter && !_state._lsNeeded && !progress(gram.beta, gram.likelihood) && !_checkPointFirstIter) {
+            if (!firstIter && !_state._lsNeeded && !progress(gram.beta, gram.objective) && !_checkPointFirstIter) {
               Log.info("DONE after " + (iterCnt - 1) + " iterations (1)");
               _model._betaCndCheckpoint = betaCnd;
               return;
             }
-/*            if (!_checkPointFirstIter)
-              betaCnd = constraintGLM_solve(gram.gram, gram.xy); // this will shrink betaCnd if needed but this call may be skipped*/
+            if (!_checkPointFirstIter)
+              betaCnd = constraintGLM_solve(gram); // this will shrink betaCnd if needed but this call may be skipped
           }
           firstIter = false;
           _checkPointFirstIter = false;
