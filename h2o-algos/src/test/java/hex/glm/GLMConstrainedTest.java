@@ -13,16 +13,13 @@ import water.runner.CloudSize;
 import water.runner.H2ORunner;
 import water.util.IcedHashMap;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-import static hex.glm.ComputationState.calDerivatives;
 import static hex.glm.ComputationState.calGram;
-import static hex.glm.ConstrainedGLMUtils.sumGramConstribution;
+import static hex.glm.ConstrainedGLMUtils.*;
 import static hex.glm.GLMModel.GLMParameters.Family.gaussian;
 import static hex.glm.GLMModel.GLMParameters.Solver.IRLSM;
 import static org.junit.Assert.assertTrue;
@@ -66,8 +63,17 @@ public class GLMConstrainedTest extends TestUtil {
   ConstrainedGLMUtils.ConstraintsGram[] _cGEqual;
   ConstrainedGLMUtils.ConstraintsGram[] _cGLess;
   List<String> _coeffsDG;
+  double[] _lambdaE;
+  double[] _lambdaL;
   double[][] _equalGramContr;
   double[][] _lessGramContr;
+  double[] _equalGradContr;
+  double[] _lessGradContr;
+  double _ck = 10;
+  double[] _beta;
+  double[] _equalGradPenalty;
+  double[] _lessGradPenalty;
+  Random _obj = new Random(123);
   
   
   @Before
@@ -92,31 +98,50 @@ public class GLMConstrainedTest extends TestUtil {
    *  The coefficient list is C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11 with C1 at index 0, C2 at index 1 and ...
    */
   public void generateConstraints() {
+    _beta = IntStream.range(0, _coeffNames1.size()).mapToDouble(x->_obj.nextGaussian()).toArray();
     _coeffsDG = new ArrayList<>(Arrays.asList("C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10", "C11", "C12"));
     _equalityConstr = new ConstrainedGLMUtils.LinearConstraints[3];
     _lessThanConstr = new ConstrainedGLMUtils.LinearConstraints[3];
-    _equalityConstr[0] = makeOneConstraint(new String[]{"C1", "C3"}, new double[]{1, -0.3});
-    _equalityConstr[1] = makeOneConstraint(new String[]{"C4", "C5"}, new double[]{11, -2.4});
-    _equalityConstr[2] = makeOneConstraint(new String[]{"C10", "C11", "Constant"}, new double[]{-9.3, 1.3, 0.4});
+    _equalityConstr[0] = makeOneConstraint(new String[]{"C1", "C3"}, new double[]{1, -0.3}, true);
+    _equalityConstr[1] = makeOneConstraint(new String[]{"C4", "C5"}, new double[]{11, -2.4}, true);
+    _equalityConstr[2] = makeOneConstraint(new String[]{"C10", "C11", "Constant"}, new double[]{-9.3, 1.3, 0.4}, true);
     
-    _lessThanConstr[0] = makeOneConstraint(new String[]{"C1", "C2", "Constant"}, new double[]{0.4, 0.2, 10});
-    _lessThanConstr[1] = makeOneConstraint(new String[]{"C3", "C4", "Constant"}, new double[]{10, -4, -100});
-    _lessThanConstr[2] = makeOneConstraint(new String[]{"C6", "C7"}, new double[]{-1.5, -2.8});
+    _lessThanConstr[0] = makeOneConstraint(new String[]{"C1", "C2", "Constant"}, new double[]{0.4, 0.2, 10}, false);
+    _lessThanConstr[1] = makeOneConstraint(new String[]{"C3", "C4", "Constant"}, new double[]{10, -4, -100}, false);
+    _lessThanConstr[2] = makeOneConstraint(new String[]{"C6", "C7"}, new double[]{-1.5, -2.8}, false);
   }
   
-  public ConstrainedGLMUtils.LinearConstraints makeOneConstraint(String[] coeffNames, double[] constrVal) {
+  public ConstrainedGLMUtils.LinearConstraints makeOneConstraint(String[] coeffNames, double[] constrVal, boolean equalConstraints) {
     ConstrainedGLMUtils.LinearConstraints constraint = new ConstrainedGLMUtils.LinearConstraints();
+    int val = 0;
     int numCoeffs = coeffNames.length;
     for (int index=0; index<numCoeffs; index++) {
       constraint._constraints.put(coeffNames[index], constrVal[index]);
+      if ("Constant".equals(coeffNames[index])) {
+        val += constrVal[index];
+      } else {
+        int coefInd = _coeffNames1.indexOf(coeffNames[index]);
+        if (coefInd >= 0)
+          val += _beta[coefInd]*constrVal[index];
+      }
     }
+    constraint._constraintsVal = val;
+    if (equalConstraints)
+      constraint._active = true;
+    else
+      constraint._active = val >= 0;
     return constraint;
   }
 
   /***
    * We are testing the correct implementation of derivatives generation from constrainted GLM.  We have fake
-   * predictors C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11 and constraints of a). 0.4*C1 + 0.2*C2+10 <= 0, b) C1-0.3*C3 == 0,
-   * c). 10*C3-4*C4 -100 <= 0, d) 11*C4 - 2.4*C5 == 0, e) -1.5*C6-2.8*C7 <= 0; f) -9.3*C10+1.3*C11 == 0.
+   * predictors C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11 and constraints of 
+   * a). 0.4*C1 + 0.2*C2+10 <= 0, 
+   * b) C1-0.3*C3 == 0,
+   * c). 10*C3-4*C4 -100 <= 0, 
+   * d) 11*C4 - 2.4*C5 == 0, 
+   * e) -1.5*C6-2.8*C7 <= 0; 
+   * f) -9.3*C10+1.3*C11 == 0.
    *
    * The coefficient list is C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11 with C1 at index 0, C2 at index 1 and ...
    *
@@ -132,14 +157,60 @@ public class GLMConstrainedTest extends TestUtil {
    * (5, -1.5), (6, -2.8)
    */
   public void generateDerivativeAnswer() {
+    int coefSize = _coeffNames1.size()+1; // +1 for intercept
+    _equalGradContr = new double[coefSize];
+    _lessGradContr = new double[coefSize];
+    // generate gradient contributions from tranpose(lambda)*h(beta)
+    _lambdaE = IntStream.range(0,3).mapToDouble(x-> _obj.nextGaussian()).toArray();
     _cdEqual = new ConstrainedGLMUtils.ConstraintsDerivatives[3];
-    _cdEqual[0] = genOneCDerivative(new int[]{0, 2}, new double[]{1, -0.3});
-    _cdEqual[1] = genOneCDerivative(new int[]{3, 4}, new double[]{11, -2.4});
-    _cdEqual[2] = genOneCDerivative(new int[]{9,10}, new double[]{-9.3, 1.3});
+    _cdEqual[0] = genOneCDerivative(new int[]{0, 2}, new double[]{1, -0.3}, true);
+    _equalGradContr[0] += 1*_lambdaE[0];
+    _equalGradContr[2] += -0.3*_lambdaE[0];
+    _cdEqual[1] = genOneCDerivative(new int[]{3, 4}, new double[]{11, -2.4}, true);
+    _equalGradContr[3] += 11*_lambdaE[1];
+    _equalGradContr[4] += -2.4*_lambdaE[1];
+    _cdEqual[2] = genOneCDerivative(new int[]{9,10}, new double[]{-9.3, 1.3}, true);
+    _equalGradContr[9] += -9.3*_lambdaE[2];
+    _equalGradContr[10] += 1.3*_lambdaE[2];
+    
+    _lambdaL = IntStream.range(0,3).mapToDouble(x->_obj.nextGaussian()).toArray();
     _cdLess = new ConstrainedGLMUtils.ConstraintsDerivatives[3];
-    _cdLess[0] = genOneCDerivative(new int[]{0,1}, new double[]{0.4, 0.2});
-    _cdLess[1] = genOneCDerivative(new int[]{2,3}, new double[]{10, -4});
-    _cdLess[2] =  genOneCDerivative(new int[]{5,6}, new double[]{-1.5, -2.8});
+    _cdLess[0] = genOneCDerivative(new int[]{0,1}, new double[]{0.4, 0.2}, _lessThanConstr[0]._active);
+    if (_lessThanConstr[0]._active) {
+      _lessGradContr[0] += 0.4 * _lambdaL[0];
+      _lessGradContr[1] += 0.2 * _lambdaL[0];
+    }
+    _cdLess[1] = genOneCDerivative(new int[]{2,3}, new double[]{10, -4}, _lessThanConstr[1]._active);
+    if (_lessThanConstr[1]._active) {
+      _lessGradContr[2] += 10 * _lambdaL[1];
+      _lessGradContr[3] += -4 * _lambdaL[1];
+    }
+    _cdLess[2] =  genOneCDerivative(new int[]{5,6}, new double[]{-1.5, -2.8}, _lessThanConstr[2]._active);
+    if (_lessThanConstr[2]._active) {
+      _lessGradContr[5] += -1.5 * _lambdaL[2];
+      _lessGradContr[6] += -2.8 * _lambdaL[2];
+    }
+    
+    // generate gradient contributions from penalty: Ck/2*transpose(h(beta))*h(beta)
+    _equalGradContr[0] += _ck*_cdEqual[0]._constraintsDerivative.get(0)*_equalityConstr[0]._constraintsVal;
+    _equalGradContr[2] += _ck*_cdEqual[0]._constraintsDerivative.get(2)*_equalityConstr[0]._constraintsVal;
+    _equalGradContr[3] += _ck*_cdEqual[1]._constraintsDerivative.get(3)*_equalityConstr[1]._constraintsVal;
+    _equalGradContr[4] += _ck*_cdEqual[1]._constraintsDerivative.get(4)*_equalityConstr[1]._constraintsVal;
+    _equalGradContr[9] += _ck*_cdEqual[2]._constraintsDerivative.get(9)*_equalityConstr[2]._constraintsVal;
+    _equalGradContr[10] += _ck*_cdEqual[2]._constraintsDerivative.get(10)*_equalityConstr[2]._constraintsVal;
+
+    if (_lessThanConstr[0]._active) {
+      _lessGradContr[0] += _ck*_cdLess[0]._constraintsDerivative.get(0)*_lessThanConstr[0]._constraintsVal;
+      _lessGradContr[1] += _ck*_cdLess[0]._constraintsDerivative.get(1)*_lessThanConstr[0]._constraintsVal;
+    }
+    if (_lessThanConstr[1]._active) {
+      _lessGradContr[2] += _ck*_cdLess[1]._constraintsDerivative.get(2)*_lessThanConstr[1]._constraintsVal;
+      _lessGradContr[3] += _ck*_cdLess[1]._constraintsDerivative.get(3)*_lessThanConstr[1]._constraintsVal;
+    }
+    if (_lessThanConstr[2]._active) {
+      _lessGradContr[5] += _ck*_cdLess[2]._constraintsDerivative.get(5)*_lessThanConstr[2]._constraintsVal;
+      _lessGradContr[6] += _ck*_cdLess[2]._constraintsDerivative.get(6)*_lessThanConstr[2]._constraintsVal;
+    }
   }
 
 
@@ -161,59 +232,71 @@ public class GLMConstrainedTest extends TestUtil {
     _lessGramContr = new double[coefSize][coefSize];
     _cGEqual = new ConstrainedGLMUtils.ConstraintsGram[3];
     _cGEqual[0] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(0,0),
-            new ConstrainedGLMUtils.CoefIndices(0,2), new ConstrainedGLMUtils.CoefIndices(2,2)}, new double[]{1, -0.3, 0.09});
+            new ConstrainedGLMUtils.CoefIndices(0,2), new ConstrainedGLMUtils.CoefIndices(2,2)}, 
+            new double[]{1, -0.3, 0.09}, true);
     _equalGramContr[0][0] += 1;
     _equalGramContr[0][2] += -0.3;
     _equalGramContr[2][0] += -0.3;
     _equalGramContr[2][2] += 0.09;
     _cGEqual[1] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(3,3),
-            new ConstrainedGLMUtils.CoefIndices(3,4), new ConstrainedGLMUtils.CoefIndices(4,4)}, new double[]{121, -26.4, 5.76});
+            new ConstrainedGLMUtils.CoefIndices(3,4), new ConstrainedGLMUtils.CoefIndices(4,4)}, 
+            new double[]{121, -26.4, 5.76}, true);
     _equalGramContr[3][3] += 121;
     _equalGramContr[3][4] += -26.4;
     _equalGramContr[4][3] += -26.4;
     _equalGramContr[4][4] += 5.76;
     _cGEqual[2] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(9,9),
-            new ConstrainedGLMUtils.CoefIndices(9,10), new ConstrainedGLMUtils.CoefIndices(10,10)}, new double[]{86.49, -12.09, 1.69});
+            new ConstrainedGLMUtils.CoefIndices(9,10), new ConstrainedGLMUtils.CoefIndices(10,10)}, 
+            new double[]{86.49, -12.09, 1.69}, true);
     _equalGramContr[9][9] += 86.49;
     _equalGramContr[9][10] += -12.09;
     _equalGramContr[10][9] += -12.09;
     _equalGramContr[10][10] += 1.69;
     _cGLess = new ConstrainedGLMUtils.ConstraintsGram[3];
     _cGLess[0] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(0,0),
-            new ConstrainedGLMUtils.CoefIndices(0,1), new ConstrainedGLMUtils.CoefIndices(1,1)}, new double[]{0.16,0.08,0.04});
-    _lessGramContr[0][0] += 0.16;
-    _lessGramContr[0][1] += 0.08;
-    _lessGramContr[1][0] += 0.08;
-    _lessGramContr[1][1] += 0.04;
+            new ConstrainedGLMUtils.CoefIndices(0,1), new ConstrainedGLMUtils.CoefIndices(1,1)}, 
+            new double[]{0.16,0.08,0.04}, _lessThanConstr[0]._active);
+    if (_lessThanConstr[0]._active) {
+      _lessGramContr[0][0] += 0.16;
+      _lessGramContr[0][1] += 0.08;
+      _lessGramContr[1][0] += 0.08;
+      _lessGramContr[1][1] += 0.04;
+    }
     _cGLess[1] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(2,2),
-            new ConstrainedGLMUtils.CoefIndices(2,3), new ConstrainedGLMUtils.CoefIndices(3,3)}, new double[]{100,-40,16});
-    _lessGramContr[2][2] += 100;
-    _lessGramContr[2][3] += -40;
-    _lessGramContr[3][2] += -40;
-    _lessGramContr[3][3] += 16;
+            new ConstrainedGLMUtils.CoefIndices(2,3), new ConstrainedGLMUtils.CoefIndices(3,3)}, 
+            new double[]{100,-40,16}, _lessThanConstr[1]._active);
+    if (_lessThanConstr[1]._active) {
+      _lessGramContr[2][2] += 100;
+      _lessGramContr[2][3] += -40;
+      _lessGramContr[3][2] += -40;
+      _lessGramContr[3][3] += 16;
+    }
     _cGLess[2] = genOneGram(new ConstrainedGLMUtils.CoefIndices[]{new ConstrainedGLMUtils.CoefIndices(5,5),
-            new ConstrainedGLMUtils.CoefIndices(5,6), new ConstrainedGLMUtils.CoefIndices(6,6)}, new double[]{2.25,4.2,7.84});
-    _lessGramContr[5][5] += 2.25;
-    _lessGramContr[5][6] += 4.2;
-    _lessGramContr[6][5] += 4.2;
-    _lessGramContr[6][6] += 7.84;
+            new ConstrainedGLMUtils.CoefIndices(5,6), new ConstrainedGLMUtils.CoefIndices(6,6)}, 
+            new double[]{2.25,4.2,7.84}, _lessThanConstr[2]._active);
+    if (_lessThanConstr[2]._active) {
+      _lessGramContr[5][5] += 2.25;
+      _lessGramContr[5][6] += 4.2;
+      _lessGramContr[6][5] += 4.2;
+      _lessGramContr[6][6] += 7.84;
+    }
   }
   
-  public ConstrainedGLMUtils.ConstraintsGram genOneGram(ConstrainedGLMUtils.CoefIndices[] coefIndices, double[] vals) {
+  public ConstrainedGLMUtils.ConstraintsGram genOneGram(ConstrainedGLMUtils.CoefIndices[] coefIndices, double[] vals, boolean active) {
     ConstrainedGLMUtils.ConstraintsGram oneG = new ConstrainedGLMUtils.ConstraintsGram();
     int numV = vals.length;
     for (int index=0; index<numV; index++)
       oneG._coefIndicesValue.put(coefIndices[index], vals[index]);
-    oneG._active = true;
+    oneG._active = active;
     return oneG;
   }
   
-  public ConstrainedGLMUtils.ConstraintsDerivatives genOneCDerivative(int[] indices, double[] vals) {
+  public ConstrainedGLMUtils.ConstraintsDerivatives genOneCDerivative(int[] indices, double[] vals, boolean active) {
     ConstrainedGLMUtils.ConstraintsDerivatives oneD = new ConstrainedGLMUtils.ConstraintsDerivatives();
     int numItem = indices.length;
     for (int index=0; index<numItem; index++)
       oneD._constraintsDerivative.put(indices[index], vals[index]);
-    oneD._active = true;
+    oneD._active = active;
     return oneD;
   }
 
@@ -427,13 +510,7 @@ public class GLMConstrainedTest extends TestUtil {
     Scope.exit();
   }
 
-  @Test
-  public void testConstraintsDerivative() {
-    ConstrainedGLMUtils.ConstraintsDerivatives[] derivativeEqual = calDerivatives(_equalityConstr, _coeffsDG);
-    ConstrainedGLMUtils.ConstraintsDerivatives[] derivativeLess = calDerivatives(_lessThanConstr, _coeffsDG);
-    assertCorrectDerivatives(derivativeEqual, _cdEqual);
-    assertCorrectDerivatives(derivativeLess, _cdLess);
-  }
+
   
   public void assertCorrectDerivatives(ConstrainedGLMUtils.ConstraintsDerivatives[] actual, 
                                        ConstrainedGLMUtils.ConstraintsDerivatives[] expected) {
@@ -450,6 +527,21 @@ public class GLMConstrainedTest extends TestUtil {
     }
   }
   
+  // test and make sure the contributions from constraints to the gradient calculations are correct.  This one does not
+  // take into account the contribution from the penalty terms.
+  @Test
+  public void testConstraintsDerivativesSum() {
+    GLM.GLMGradientInfo ginfo = new GLM.GLMGradientInfo(0,0, new double[_equalGradContr.length]);
+    addConstraintGradient(_lambdaE, _cdEqual, ginfo);
+    addPenaltyGradient(_cdEqual, _equalityConstr, ginfo, _ck);
+    checkArrays(_equalGradContr, ginfo._gradient, 1e-6);
+    ginfo = new GLM.GLMGradientInfo(0,0, new double[_lessGradContr.length]);
+    addConstraintGradient(_lambdaL, _cdLess, ginfo);
+    addPenaltyGradient(_cdLess, _lessThanConstr, ginfo, _ck);
+    checkArrays(_lessGradContr, ginfo._gradient, 1e-6);
+  }
+  
+  // This test will form a double[][] matrix which should capture the contributions from all the constraints.
   @Test
   public void testGramConstraintsSum() {
     double[][] equalGramC = sumGramConstribution(_cGEqual, _coeffNames1.size()+1);
@@ -458,6 +550,8 @@ public class GLMConstrainedTest extends TestUtil {
     checkDoubleArrays(lessGramC, _lessGramContr, 1e-6);
   }
 
+  // make sure constraints (the penalty part) contributions to the Gram matrix is calculated correctly.  The final 
+  // result should be an array of ConstraintsGram.
   @Test
   public void testConstraintsGram() {
     ConstrainedGLMUtils.ConstraintsGram[] gramEqual = calGram(_cdEqual);
@@ -571,6 +665,7 @@ public class GLMConstrainedTest extends TestUtil {
     }
   }
 
+  // make sure duplicated bete or linear constraints specified are caught.
   @Test
   public void testDuplicateBetaLinearConstraints() {
     Scope.enter();
