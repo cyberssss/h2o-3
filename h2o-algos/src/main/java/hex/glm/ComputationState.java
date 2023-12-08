@@ -1329,9 +1329,8 @@ public final class ComputationState {
       return computeNewGram(_activeData, ArrayUtils.select(beta, _activeData.activeCols()), s);
   }
 
-  protected GramGrad computeGram(double [] beta, double[] lambdaE, double[] lambdaL, ConstraintsDerivatives[] equalD,
-                                 ConstraintsDerivatives[] lessD, double[][] equalGCntri, ConstraintsGram[] lessG,
-                                 GLMGradientSolver ginfo, LinearConstraints[] constraintE, LinearConstraints[] constraintL){
+  protected GramGrad computeGram(double [] beta, double[] lambdaE, double[] lambdaL, double[][] equalGCntri, ConstraintsGram[] lessG,
+                                 GLMGradientInfo gradientInfo, LinearConstraints[] constraintE, LinearConstraints[] constraintL){
     DataInfo activeData = activeData();
     double obj_reg = _parms._obj_reg;
     if(_glmw == null) _glmw = new GLMModel.GLMWeightsFun(_parms);
@@ -1345,15 +1344,6 @@ public final class ComputationState {
     if (_parms._glmType.equals(GLMParameters.GLMType.gam)) { // add contribution from GAM smoothness factor
       gt._gram.addGAMPenalty(_penaltyMatrix, _gamBetaIndices, fullGram);
     }
-    // calculate gradients
-    GLMGradientInfo gradientInfo = ginfo.getGradient(beta); // gradient without constraints
-    // add gradient contribution from constraints
-    if (equalD != null)
-      addConstraintGradient(lambdaE, equalD, gradientInfo);
-    addConstraintGradient(lambdaL, lessD, gradientInfo);
-    if (equalD != null)
-      addPenaltyGradient(equalD, constraintE, gradientInfo, _csGLMState._ckCS);
-    addPenaltyGradient(lessD, constraintL, gradientInfo, _csGLMState._ckCS);
     // form xy which is (Gram*beta_current + gradient)
     double[] xy = formXY(fullGram, beta, gradientInfo._gradient);
     // add contributions from constraints to objective

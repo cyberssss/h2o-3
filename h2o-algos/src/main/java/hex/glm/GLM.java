@@ -2297,28 +2297,24 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
       // will be null if constraints do not exist
       LinearConstraints[] equalityConstraints = combineConstraints(_state._equalityConstraintsBeta, _state._equalityConstraints);
       LinearConstraints[] lessThanEqualToConstraints = combineConstraints(_state._lessThanEqualToConstraintsBeta, _state._lessThanEqualToConstraints);
-      final double[] betaF = betaCnd.clone();
       boolean hasEqualityConstraints = equalityConstraints != null;
       double[] lambdaEqual = hasEqualityConstraints ? new double[equalityConstraints.length] : null;
       double[] lambdaLessThan = new double[lessThanEqualToConstraints.length];
       Long startSeed = _parms._seed == -1 ? new Random().nextLong() : _parms._seed;
       Random randObj = new Random(startSeed);
-      extractActiveConstraints(lessThanEqualToConstraints, betaF, coeffNames);
-      if (hasEqualityConstraints) { // initialize lambda for equality constraints
-        Arrays.stream(equalityConstraints).collect(Collectors.toList()).parallelStream().forEach(constraint -> evalOneConstraint(constraint, betaF, coeffNames));
+      updateConstraintValues(betaCnd, coeffNames, equalityConstraints, lessThanEqualToConstraints);
+      if (hasEqualityConstraints) { // set lambda values
         genInitialLambda(randObj, equalityConstraints, lambdaEqual);
       }
       genInitialLambda(randObj, lessThanEqualToConstraints, lambdaLessThan);
-      double[] lambdaEqualNew = hasEqualityConstraints ? lambdaEqual.clone() : null; 
-      double [] lambdaLessThanNew = lambdaLessThan.clone();
       LineSearchSolver ls = null;
       int iterCnt = _checkPointFirstIter ? _state._iter : 0;
       boolean firstIter = iterCnt == 0;
       double objConstraints;
-      // contribution to gradient from transpose(lambda)*constraint vector without lambda values
+      // contribution to gradient from transpose(lambda)*constraint vector without lambda values, stays constant
       ConstraintsDerivatives[] derivativeEqual = hasEqualityConstraints ? calDerivatives(equalityConstraints, coeffNames) : null;
       ConstraintsDerivatives[] derivativeLess = calDerivatives(lessThanEqualToConstraints, coeffNames);
-      // contribution to hessian from ||h(beta)||^2 without C
+      // contribution to hessian from ||h(beta)||^2 without C, stays constant
       ConstraintsGram[] gramEqual = hasEqualityConstraints ? calGram(derivativeEqual) : null;
       double[][] gramEqualContributions = hasEqualityConstraints ? sumGramConstribution(gramEqual, betaCnd.length) : null;
       ConstraintsGram[] gramLess = calGram(derivativeLess);
@@ -2327,21 +2323,22 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
               _dinfo, 0, _state.activeBC(), _betaInfo);
       GLMGradientInfo gradientInfo = calGradient(betaCnd, _state, ginfo, lambdaEqual, lambdaLessThan, 
               equalityConstraints, lessThanEqualToConstraints, derivativeEqual, derivativeLess);
-
       try {
         while (true) {
           iterCnt++;
           long t1 = System.currentTimeMillis();
-          ComputationState.GramGrad gram = _state.computeGram(betaCnd, lambdaEqual, lambdaLessThan, derivativeEqual, 
-                  derivativeLess, gramEqualContributions, gramLess, ginfo, equalityConstraints, 
+          ComputationState.GramGrad gram = _state.computeGram(betaCnd, lambdaEqual, lambdaLessThan, 
+                  gramEqualContributions, gramLess, gradientInfo, equalityConstraints, 
                   lessThanEqualToConstraints);  // only calculate gram with constraint contributions
           // solve for new lambdas, cks, and other variables
           long t2 = System.currentTimeMillis();
           if (!_state._lsNeeded && (Double.isNaN(gram.objective) || _state.objective(gram.beta, gram.objective) >
-                  _state.objective() + _parms._objective_epsilon) && !_checkPointFirstIter) {
+                  _state.objective() + _parms._objective_epsilon) && !_checkPointFirstIter) { // gram.beta = betacnd
             _state._lsNeeded = true;
           } else {
-            if (!firstIter && !_state._lsNeeded && !progress(gram.beta, gram.objective) && !_checkPointFirstIter) {
+            if (!firstIter && !_state._lsNeeded && !progress(gram.beta, gram.objective) && !_checkPointFirstIter &&
+                    constraintsStop(gradientInfo, _state, equalityConstraints, lessThanEqualToConstraints,
+                            coeffNames)) {
               Log.info("DONE after " + (iterCnt - 1) + " iterations (1)");
               _model._betaCndCheckpoint = betaCnd;
               return;
@@ -2366,20 +2363,22 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
               return;
             }
             betaCnd = ls.getX();
-            if (!progress(betaCnd, ls.ginfo()) && constraintsStop(gram, _state, equalityConstraints, 
-                    lessThanEqualToConstraints)) // check if stopping conditions are met
+            gradientInfo = calGradient(betaCnd, _state, ginfo, lambdaEqual, lambdaLessThan,
+                    equalityConstraints, lessThanEqualToConstraints, derivativeEqual, derivativeLess);
+            if (!progress(betaCnd, ls.ginfo()) && constraintsStop(gradientInfo, _state, equalityConstraints, 
+                    lessThanEqualToConstraints, coeffNames)) // check if stopping conditions are met
               return;
-            updateConstraintParameters(gram, _state, lambdaEqual, lambdaLessThan, equalityConstraints,
-                    lessThanEqualToConstraints);
+            updateConstraintParameters(_state, lambdaEqual, lambdaLessThan, equalityConstraints, lessThanEqualToConstraints);
             long t4 = System.currentTimeMillis();
             Log.info(LogMsg("computed in " + (t2 - t1) + "+" + (t3 - t2) + "+" + (t4 - t3) + "=" + (t4 - t1) + "ms, step = " + ls.step() + ((_lslvr != null) ? ", l1solver " + _lslvr : "")));
-          } else {
+          } else {  // when there is no line search
             Log.info(LogMsg("computed in " + (t2 - t1) + "+" + (t3 - t2) + "=" + (t3 - t1) + "ms, step = " + 1 + 
                     ((_lslvr != null) ? ", l1solver " + _lslvr : "")));
             // calculate gradient magnitude and constraint mag square
-            constraintsStop(gram, _state, equalityConstraints, lessThanEqualToConstraints);
-            updateConstraintParameters(gram, _state, lambdaEqual, lambdaLessThan, equalityConstraints,
-                    lessThanEqualToConstraints);
+            updateConstraintValues(betaCnd, coeffNames, equalityConstraints, lessThanEqualToConstraints);
+            gradientInfo = calGradient(betaCnd, _state, ginfo, lambdaEqual, lambdaLessThan, equalityConstraints, 
+                    lessThanEqualToConstraints, derivativeEqual, derivativeLess);
+            updateConstraintParameters(_state, lambdaEqual, lambdaLessThan, equalityConstraints, lessThanEqualToConstraints);
           }
         }
       } catch (NonSPDMatrixException e) {

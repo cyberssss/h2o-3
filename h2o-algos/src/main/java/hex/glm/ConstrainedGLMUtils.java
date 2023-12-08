@@ -19,10 +19,11 @@ import static water.util.ArrayUtils.innerProduct;
 public class ConstrainedGLMUtils {
   // constant setting refer to Michel Bierlaire, Optimization: Principles and Algorithms, Chapter 19, EPEL Press,
   // second edition, 2018.
-  public static final double C0CS = 10.0;
+  public static final double C0CS = 10.0; // also value of Tau
   public static final double ETA0CS = 0.1258925;
   public static final double ALPHACS = 0.1;
   public static final double BETACS = 0.9;
+  public static final double EPSILON0 = 0.1;
   
   public static class LinearConstraints extends Iced { // store one linear constraint
     public IcedHashMap<String, Double> _constraints; // column names, coefficient of constraints
@@ -443,8 +444,8 @@ public class ConstrainedGLMUtils {
     return null;
   }
   
-  public static void extractActiveConstraints(LinearConstraints[] lessThanEqualToConstraints,
-                                                                 double[] beta, List<String> coeffNames) {
+  public static void setActiveConstraints(LinearConstraints[] lessThanEqualToConstraints,
+                                          double[] beta, List<String> coeffNames) {
     // evaluate all constraint values
     Arrays.stream(lessThanEqualToConstraints).collect(Collectors.toList()).parallelStream().forEach(constraint -> evalOneConstraint(constraint, beta, coeffNames));
     // only include constraint with val >= 0 into activeConstraints
@@ -535,21 +536,38 @@ public class ConstrainedGLMUtils {
     }
   }
   
-  public static void updateConstraintParameters(ComputationState.GramGrad gram, ComputationState state, 
-                                                double[] lambdaEqual, double[]lambdaLessThan, 
+  public static void updateConstraintParameters(ComputationState state, double[] lambdaEqual, double[]lambdaLessThan, 
                                                 LinearConstraints[] equalConst, LinearConstraints[] lessThanConst) {
-    double[] beta = state.beta();
-    List<String> coefNames = Arrays.stream(state._dinfo.coefNames()).collect(Collectors.toList());
     // calculate ||h(beta)|| and check what updates to perform
-    double hBetaMag = calHBetaMag(beta, lessThanConst, coefNames, false);
-    hBetaMag += calHBetaMag(beta, equalConst, coefNames, true);
-    if (hBetaMag <= state._csGLMState._etakCS) {
-      
+    double hBetaMag = state._csGLMState._constraintMagSquare;
+    if (hBetaMag <= state._csGLMState._etakCS*state._csGLMState._etakCS) {
+      if (equalConst != null)
+        updateLambda(lambdaEqual, state._csGLMState._ckCS, equalConst);
+      updateLambda(lambdaLessThan, state._csGLMState._ckCS, lessThanConst);
+      state._csGLMState._epsilonkCS = state._csGLMState._epsilonkCS/state._csGLMState._ckCS;
+      state ._csGLMState._etakCS = state._csGLMState._etakCS/Math.pow(state._csGLMState._ckCS, BETACS);
     } else {
-      
+      state._csGLMState._ckCS = state._csGLMState._ckCS*C0CS;
+      state._csGLMState._epsilonkCS = EPSILON0/state._csGLMState._ckCS;
+      state ._csGLMState._etakCS = ETA0CS/Math.pow(state._csGLMState._ckCS, ALPHACS);
     }
   }
   
+  public static void updateLambda(double[] lambda, double ckCS, LinearConstraints[] constraints) {
+    int numC = constraints.length;
+    LinearConstraints oneC;
+    for (int index=0; index<numC; index++) {
+      oneC = constraints[index];
+      if (oneC._active)
+        lambda[index] += ckCS*oneC._constraintsVal;
+    }
+  }
+
+  /***
+   * This method will calculate the ||h(beta)|| square.  It will also update the constraint values as well and the 
+   * active statues for less than and equal to zero constraints are re-evaluated as well with the beta values.
+   * 
+   */
   public static double calHBetaMagSquare(double[] beta, LinearConstraints[] constraints, List<String> coefNames, 
                                    boolean setActive2True) {
     if (constraints == null) return 0;
@@ -577,19 +595,20 @@ public class ConstrainedGLMUtils {
   }
 
   /***
-   * This method will check if the stopping conditions for constraint GLM are met and they are namely:
+   * This method will check if the stopping 
+   * conditions for constraint GLM are met and they are namely:
    * 1. ||gradient of L with respect to beta and withy respect to lambda|| <= epsilon
    * 2. ||h(beta)|| square <= epsilon
    * 
    * If the stopping conditions are met, it will return true, else it will return false.
    */
-  public static boolean constraintsStop(ComputationState.GramGrad gram, ComputationState state, LinearConstraints[] equalConst, 
-                                        LinearConstraints[] lessThanConst) {
+  public static boolean constraintsStop(GLM.GLMGradientInfo gradientInfo, ComputationState state, 
+                                        LinearConstraints[] equalConst, LinearConstraints[] lessThanConst, 
+                                        List<String> coefNames) {
     double[] beta = state.beta();
-    List<String> coefNames = Arrays.stream(state._dinfo.coefNames()).collect(Collectors.toList());
     state._csGLMState._constraintMagSquare = calHBetaMagSquare(beta, lessThanConst, coefNames, false) + 
             calHBetaMagSquare(beta, equalConst, coefNames, true);
-    state._csGLMState._gradientMag = Math.sqrt(innerProduct(gram._grad, gram._grad));
+    state._csGLMState._gradientMag = Math.sqrt(innerProduct(gradientInfo._gradient, gradientInfo._gradient));
     if (state._csGLMState._constraintMagSquare <= ComputationState.EPS_CS && state._csGLMState._gradientMag <= ComputationState.EPS_CS)
       return true;
     return false;
@@ -609,5 +628,12 @@ public class ConstrainedGLMUtils {
       addPenaltyGradient(equalD, constraintE, gradientInfo, state._csGLMState._ckCS);
     addPenaltyGradient(lessD, constrainL, gradientInfo, state._csGLMState._ckCS);
     return gradientInfo;
+  }
+  
+  public static void updateConstraintValues(double[] betaCnd, List<String> coeffNames, 
+                                            LinearConstraints[] equalityConstraints, LinearConstraints[] lessThanEqualToConstraints) {
+    if (equalityConstraints != null)  // initialize lambda for equality constraints
+      Arrays.stream(equalityConstraints).collect(Collectors.toList()).parallelStream().forEach(constraint -> evalOneConstraint(constraint, betaCnd, coeffNames));
+    setActiveConstraints(lessThanEqualToConstraints, betaCnd, coeffNames);
   }
 }
