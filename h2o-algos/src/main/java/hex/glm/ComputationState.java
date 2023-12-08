@@ -37,6 +37,7 @@ import static water.util.ArrayUtils.*;
 
 public final class ComputationState {
   private static final double R2_EPS = 1e-7;
+  public static final double EPS_CS = 1e-6;
   private static final int MIN_PAR = 1000;
   final boolean _intercept;
   final int _nbetas;
@@ -1330,7 +1331,7 @@ public final class ComputationState {
 
   protected GramGrad computeGram(double [] beta, double[] lambdaE, double[] lambdaL, ConstraintsDerivatives[] equalD,
                                  ConstraintsDerivatives[] lessD, double[][] equalGCntri, ConstraintsGram[] lessG,
-                                 GLMGradientSolver ginfo, LinearConstraints[] constraintD, LinearConstraints[] constraintL){
+                                 GLMGradientSolver ginfo, LinearConstraints[] constraintE, LinearConstraints[] constraintL){
     DataInfo activeData = activeData();
     double obj_reg = _parms._obj_reg;
     if(_glmw == null) _glmw = new GLMModel.GLMWeightsFun(_parms);
@@ -1351,13 +1352,13 @@ public final class ComputationState {
       addConstraintGradient(lambdaE, equalD, gradientInfo);
     addConstraintGradient(lambdaL, lessD, gradientInfo);
     if (equalD != null)
-      addPenaltyGradient(equalD, constraintD, gradientInfo, _csGLMState._ckCS);
+      addPenaltyGradient(equalD, constraintE, gradientInfo, _csGLMState._ckCS);
     addPenaltyGradient(lessD, constraintL, gradientInfo, _csGLMState._ckCS);
     // form xy which is (Gram*beta_current + gradient)
     double[] xy = formXY(fullGram, beta, gradientInfo._gradient);
     // add contributions from constraints to objective
-    if (constraintD != null)
-      addConstraintObj(lambdaE, constraintD, _csGLMState._ckCS, gradientInfo);
+    if (constraintE != null)
+      addConstraintObj(lambdaE, constraintE, _csGLMState._ckCS, gradientInfo);
     addConstraintObj(lambdaL, constraintL, _csGLMState._ckCS, gradientInfo);
     // remove zeros in Gram matrix and throw an error if that coefficient is included in the constraint
     return new GramGrad(fullGram, gradientInfo._gradient, beta, gradientInfo._objVal, gt.sumOfRowWeights, xy);

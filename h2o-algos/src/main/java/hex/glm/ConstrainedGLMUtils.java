@@ -14,6 +14,8 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import static water.util.ArrayUtils.innerProduct;
+
 public class ConstrainedGLMUtils {
   // constant setting refer to Michel Bierlaire, Optimization: Principles and Algorithms, Chapter 19, EPEL Press,
   // second edition, 2018.
@@ -83,6 +85,8 @@ public class ConstrainedGLMUtils {
     double _etakCS = ETA0CS*Math.pow(C0CS, ALPHACS);
     String[] _constraintNames;
     double[][] _initCSMatrix;
+    double _gradientMag;
+    double _constraintMagSquare;
     
     
     public ConstraintGLMStates(String[] constrainNames, double[][] initMatrix) {
@@ -529,5 +533,81 @@ public class ConstrainedGLMUtils {
         }
       }
     }
+  }
+  
+  public static void updateConstraintParameters(ComputationState.GramGrad gram, ComputationState state, 
+                                                double[] lambdaEqual, double[]lambdaLessThan, 
+                                                LinearConstraints[] equalConst, LinearConstraints[] lessThanConst) {
+    double[] beta = state.beta();
+    List<String> coefNames = Arrays.stream(state._dinfo.coefNames()).collect(Collectors.toList());
+    // calculate ||h(beta)|| and check what updates to perform
+    double hBetaMag = calHBetaMag(beta, lessThanConst, coefNames, false);
+    hBetaMag += calHBetaMag(beta, equalConst, coefNames, true);
+    if (hBetaMag <= state._csGLMState._etakCS) {
+      
+    } else {
+      
+    }
+  }
+  
+  public static double calHBetaMagSquare(double[] beta, LinearConstraints[] constraints, List<String> coefNames, 
+                                   boolean setActive2True) {
+    if (constraints == null) return 0;
+    double sumV = 0;
+    int numConst = constraints.length;
+    LinearConstraints oneConst;
+    double val;
+    for (int index=0; index<numConst; index++) {
+      oneConst = constraints[index];
+      evalOneConstraint(oneConst, beta, coefNames);
+      val = oneConst._constraintsVal;
+      if (setActive2True) {  // processing equal constraints
+        oneConst._active = true;
+        sumV += val*val;
+      } else {  // processing less than equal constraints
+        if (val >= 0) {
+          oneConst._active = true;
+          sumV += val*val;
+        } else {   // constraint ignored since it is < 0
+          oneConst._active = false;
+        }
+      }
+    }
+    return sumV;
+  }
+
+  /***
+   * This method will check if the stopping conditions for constraint GLM are met and they are namely:
+   * 1. ||gradient of L with respect to beta and withy respect to lambda|| <= epsilon
+   * 2. ||h(beta)|| square <= epsilon
+   * 
+   * If the stopping conditions are met, it will return true, else it will return false.
+   */
+  public static boolean constraintsStop(ComputationState.GramGrad gram, ComputationState state, LinearConstraints[] equalConst, 
+                                        LinearConstraints[] lessThanConst) {
+    double[] beta = state.beta();
+    List<String> coefNames = Arrays.stream(state._dinfo.coefNames()).collect(Collectors.toList());
+    state._csGLMState._constraintMagSquare = calHBetaMagSquare(beta, lessThanConst, coefNames, false) + 
+            calHBetaMagSquare(beta, equalConst, coefNames, true);
+    state._csGLMState._gradientMag = Math.sqrt(innerProduct(gram._grad, gram._grad));
+    if (state._csGLMState._constraintMagSquare <= ComputationState.EPS_CS && state._csGLMState._gradientMag <= ComputationState.EPS_CS)
+      return true;
+    return false;
+  }
+  
+  public static GLM.GLMGradientInfo calGradient(double[] betaCnd, ComputationState state, GLM.GLMGradientSolver ginfo,
+                                                double[] lambdaE, double[] lambdaL, LinearConstraints[] constraintE,
+                                                LinearConstraints[] constrainL, ConstraintsDerivatives[] equalD, 
+                                                ConstraintsDerivatives[] lessD) {
+    // calculate gradients
+    GLM.GLMGradientInfo gradientInfo = ginfo.getGradient(betaCnd); // gradient without constraints
+    // add gradient contribution from constraints
+    if (equalD != null)
+      addConstraintGradient(lambdaE, equalD, gradientInfo);
+    addConstraintGradient(lambdaL, lessD, gradientInfo);
+    if (equalD != null)
+      addPenaltyGradient(equalD, constraintE, gradientInfo, state._csGLMState._ckCS);
+    addPenaltyGradient(lessD, constrainL, gradientInfo, state._csGLMState._ckCS);
+    return gradientInfo;
   }
 }

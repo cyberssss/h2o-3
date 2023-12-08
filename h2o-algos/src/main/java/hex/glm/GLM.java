@@ -2325,6 +2325,9 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
       GLMGradientSolver ginfo = gam.equals(_parms._glmType) ? new GLMGradientSolver(_job, _parms, _dinfo, 0,
               _state.activeBC(), _betaInfo, _penaltyMatrix, _gamColIndices) : new GLMGradientSolver(_job, _parms, 
               _dinfo, 0, _state.activeBC(), _betaInfo);
+      GLMGradientInfo gradientInfo = calGradient(betaCnd, _state, ginfo, lambdaEqual, lambdaLessThan, 
+              equalityConstraints, lessThanEqualToConstraints, derivativeEqual, derivativeLess);
+
       try {
         while (true) {
           iterCnt++;
@@ -2363,12 +2366,20 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
               return;
             }
             betaCnd = ls.getX();
-            if (!progress(betaCnd, ls.ginfo()))
+            if (!progress(betaCnd, ls.ginfo()) && constraintsStop(gram, _state, equalityConstraints, 
+                    lessThanEqualToConstraints)) // check if stopping conditions are met
               return;
+            updateConstraintParameters(gram, _state, lambdaEqual, lambdaLessThan, equalityConstraints,
+                    lessThanEqualToConstraints);
             long t4 = System.currentTimeMillis();
             Log.info(LogMsg("computed in " + (t2 - t1) + "+" + (t3 - t2) + "+" + (t4 - t3) + "=" + (t4 - t1) + "ms, step = " + ls.step() + ((_lslvr != null) ? ", l1solver " + _lslvr : "")));
           } else {
-            Log.info(LogMsg("computed in " + (t2 - t1) + "+" + (t3 - t2) + "=" + (t3 - t1) + "ms, step = " + 1 + ((_lslvr != null) ? ", l1solver " + _lslvr : "")));
+            Log.info(LogMsg("computed in " + (t2 - t1) + "+" + (t3 - t2) + "=" + (t3 - t1) + "ms, step = " + 1 + 
+                    ((_lslvr != null) ? ", l1solver " + _lslvr : "")));
+            // calculate gradient magnitude and constraint mag square
+            constraintsStop(gram, _state, equalityConstraints, lessThanEqualToConstraints);
+            updateConstraintParameters(gram, _state, lambdaEqual, lambdaLessThan, equalityConstraints,
+                    lessThanEqualToConstraints);
           }
         }
       } catch (NonSPDMatrixException e) {
