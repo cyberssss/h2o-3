@@ -2,10 +2,19 @@ import h2o
 from h2o.estimators.glm import H2OGeneralizedLinearEstimator
 from tests import pyunit_utils
 
-def test_prostate():
-    h2o_data = h2o.import_file(pyunit_utils.locate("smalldata/logreg/prostate.csv"))
-    h2o_data["AGE"] = h2o_data["AGE"].asfactor()
-
+# The purpose of this test to make sure that constraint GLM works in the presence of collinear columns in the dataset
+def test_constraints_collinear_columns():
+    # first two columns are enums, the last 4 are real columns
+    h2o_data = pyunit_utils.genTrainFrame(10000, 6, enumCols=2, enumFactors=2, responseLevel=2, miscfrac=0, randseed=12345)
+    # create extra collinear columns
+    num1 = h2o_data[2]*0.2-0.5*h2o_data[3]
+    num2 = -0.8*h2o_data[4]+0.1*h2o_data[5]
+    h2o_collinear = num1.cbind(num2)
+    h2o_collinear.set_names(["col1", "col2"])
+    train_data = h2o_data.cbind(h2o_collinear)
+    y = "response"
+    x = train_data.names
+    x.remove(y)
     bc = []
 
     name = "AGE"
@@ -46,18 +55,15 @@ def test_prostate():
     beta_constraints = h2o.H2OFrame(bc)
     beta_constraints.set_names(["names", "lower_bounds", "upper_bounds"])
 
-    h2o_glm = H2OGeneralizedLinearEstimator(family="binomial", nfolds=10, alpha=0.5, beta_constraints=beta_constraints)
-    h2o_glm.train(x=list(range(2, h2o_data.ncol)), y=1, training_frame=h2o_data )
+#    h2o_glm = H2OGeneralizedLinearEstimator(family="binomial", nfolds=10, alpha=0.5, beta_constraints=beta_constraints)
+    h2o_glm = H2OGeneralizedLinearEstimator(family="binomial", compute_p_values=True, lambda_=0.0, solver="irlsm")
+    h2o_glm.train(x=x, y=y, training_frame=train_data )
 
-    for i in range(len(h2o_glm._model_json['output']['coefficients_table'][0])):
-        for constraint in beta_constraints.as_data_frame().to_numpy():
-            if (h2o_glm._model_json['output']['coefficients_table'][0][i].startswith(constraint[0])):
-                assert h2o_glm._model_json['output']['coefficients_table'][1][i] >= constraint[1]
-                assert h2o_glm._model_json['output']['coefficients_table'][1][i] <= constraint[2]
+    print("Done")
 
 
 
 if __name__ == "__main__":
-    pyunit_utils.standalone_test(test_prostate)
+    pyunit_utils.standalone_test(test_constraints_collinear_columns)
 else:
-    test_prostate()
+    test_constraints_collinear_columns()

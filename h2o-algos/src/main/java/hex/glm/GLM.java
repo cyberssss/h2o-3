@@ -1661,7 +1661,7 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
       if (!_parms._intercept) throw H2O.unimpl();
       ArrayList<Integer> ignoredCols = new ArrayList<>();
       double[] xy = gram._xy.clone();
-      Cholesky chol = ((_state._iter == 0) ? gram.qrCholesky(gram._gram, _parms._standardize) : gram.cholesky(null, gram._gram));
+      Cholesky chol = ((_state._iter == 0) ? gram.qrCholesky(ignoredCols, gram._gram, _parms._standardize) : gram.cholesky(null, gram._gram));
       if (!ignoredCols.isEmpty() && !_parms._remove_collinear_columns) {
         int[] collinear_cols = new int[ignoredCols.size()];
         for (int i = 0; i < collinear_cols.length; ++i)

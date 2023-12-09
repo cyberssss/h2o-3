@@ -1114,7 +1114,7 @@ public final class ComputationState {
       return chol;
     }
 
-    public Gram.Cholesky qrCholesky(double[][] Z, boolean standardized) {
+    public Gram.Cholesky qrCholesky(List<Integer> dropped_cols, double[][] Z, boolean standardized) {
       final double [][] R = new double[Z.length][];
       final double [] Zdiag = new double[Z.length];
       final double [] ZdiagInv = new double[Z.length];
@@ -1136,7 +1136,13 @@ public final class ComputationState {
         double rs_tot = standardized
                 ?ZdiagInv[j]
                 :1.0/(Zdiag[j]-Z[j][0]*ZdiagInv[0]*Z[j][0]);
-          ZdiagInv[j] = 1./zjj;
+        if (j > 0 && zjj*rs_tot < R2_EPS) {
+          zjj=0;
+          dropped_cols.add(j-1);
+          ZdiagInv[j] = 0;
+        } else {
+          ZdiagInv[j] = 1. / zjj;
+        }
         Z[j][j] = zjj;
         int jchunk = Math.max(1,MIN_PAR/(Z.length-j));
         int nchunks = (Z.length - j - 1)/jchunk;
@@ -1185,8 +1191,31 @@ public final class ComputationState {
         }
         ForkJoinTask.invokeAll(ras);
       }
-      // add redundant column detection and throws an error if the dropped column is part of any constraints.
-      return new Gram.Cholesky(R,new double[0], true);
+      // deal with dropped_cols if present
+      if (dropped_cols.isEmpty()) 
+        return new Gram.Cholesky(R, new double[0], true);
+      else
+        return new Gram.Cholesky(dropIgnoredCols(R, Z, dropped_cols),new double[0], true);
+    }
+    
+    public static double[][] dropIgnoredCols(double[][] R, double[][] Z, List<Integer> dropped_cols) {
+      double[][] Rnew = new double[R.length-dropped_cols.size()][];
+      for(int i = 0; i < Rnew.length; ++i)
+        Rnew[i] = new double[i+1];
+      int j = 0;
+      for(int i = 0; i < R.length; ++i) {
+        if(Z[i][i] == 0) continue;
+        int k = 0;
+        for(int l = 0; l <= i; ++l) {
+          if(k < dropped_cols.size() && l == (dropped_cols.get(k)+1)) {
+            ++k;
+            continue;
+          }
+          Rnew[j][l - k] = R[i][l];
+        }
+        ++j;
+      }
+      return Rnew;
     }
 
     private final void updateZij(int i, int j, double [][] Z, double [] gamma) {
